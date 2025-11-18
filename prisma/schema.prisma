@@ -1,0 +1,302 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  // Vercel 배포를 위한 바이너리 타겟
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// 1. 조직 관리
+// ============================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  settings  Json?    @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users    User[]
+  projects Project[]
+
+  @@map("organizations")
+}
+
+// ============================================
+// 2. 사용자 (NextAuth 통합)
+// ============================================
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  emailVerified  DateTime?
+  name           String?
+  image          String?
+  role           String    @default("member") // admin, member
+  organizationId String
+  lastSignInAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accounts        Account[]
+  sessions        Session[]
+  projects        Project[]         @relation("CreatedProjects")
+  relationTuples  RelationTuple[]
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("users")
+}
+
+// ============================================
+// 3. NextAuth 모델
+// ============================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ============================================
+// 4. ReBAC 권한 시스템
+// ============================================
+
+model RelationTuple {
+  id          String   @id @default(cuid())
+  namespace   String   // "project"
+  objectId    String   // project.id
+  relation    String   // "owner", "editor", "viewer"
+  subjectType String   // "user"
+  subjectId   String   // user.id
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([namespace, objectId, relation, subjectType, subjectId])
+  @@index([namespace, objectId])
+  @@index([subjectId])
+  @@map("relation_tuples")
+}
+
+model RelationDefinition {
+  id        String   @id @default(cuid())
+  namespace String   // "project"
+  relation  String   // "owner"
+  inherits  String[] // ["editor", "viewer"]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([namespace, relation])
+  @@map("relation_definitions")
+}
+
+// ============================================
+// 5. 프로젝트
+// ============================================
+
+model Project {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  status      String   @default("draft") // draft, script_generating, script_generated, rendering, rendered, failed
+
+  // 조직 및 생성자
+  organizationId String
+  createdById    String
+
+  // 설정
+  settings Json? @default("{}")
+
+  // 커스텀 아바타
+  avatarDesignMode     String? @default("preset") // preset, custom
+  avatarDesignStatus   String? @default("pending") // pending, generating, generated, failed
+  avatarDesignSettings Json?   @default("{}")
+
+  // 배경 생성 비용
+  backgroundTotalCost      Decimal? @db.Decimal(10, 2)
+  backgroundCostBreakdown  Json?
+
+  // 타임스탬프
+  scriptGeneratedAt DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("CreatedProjects", fields: [createdById], references: [id], onDelete: Cascade)
+  documents    Document[]
+  scenes       Scene[]
+  assets       Asset[]
+  renderJobs   RenderJob[]
+
+  @@index([organizationId])
+  @@index([createdById])
+  @@index([status])
+  @@map("projects")
+}
+
+// ============================================
+// 6. 문서
+// ============================================
+
+model Document {
+  id        String   @id @default(cuid())
+  projectId String
+  status    String   @default("pending") // pending, processing, processed, failed
+  metadata  Json?    @default("{}")
+
+  // Supabase Storage
+  fileUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("documents")
+}
+
+// ============================================
+// 7. 씬
+// ============================================
+
+model Scene {
+  id             String  @id @default(cuid())
+  projectId      String
+  sceneNumber    Int
+  position       Int
+  script         String  @db.Text
+  visualDescription String? @db.Text
+  durationSeconds   Float?
+
+  // TTS 설정
+  ttsVoiceId String?
+  ttsParams  Json?   @default("{}")
+  ttsStatus  String  @default("pending") // pending, processing, completed, failed
+
+  // 아바타 설정
+  avatarId     String?
+  avatarParams Json?   @default("{}")
+  avatarStatus String  @default("pending") // pending, processing, completed, failed
+
+  // 배경 설정
+  backgroundSettings Json?   @default("{}")
+  backgroundStatus   String  @default("pending") // pending, generating, generated, failed
+  backgroundType     String? // veo_video, nano_image, ffmpeg_gradient
+  backgroundAnalysis Json?
+  backgroundMetadata Json?
+  backgroundError    String? @db.Text
+
+  // 기타 메타데이터
+  metadata Json? @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assets  Asset[]
+
+  @@unique([projectId, sceneNumber])
+  @@index([projectId])
+  @@index([position])
+  @@map("scenes")
+}
+
+// ============================================
+// 8. 에셋 (파일)
+// ============================================
+
+model Asset {
+  id        String  @id @default(cuid())
+  projectId String
+  sceneId   String?
+  kind      String  // audio, avatar_video, avatar_design, background_image, background_video, background_gradient, final_video, subtitle
+  metadata  Json?   @default("{}")
+
+  // Supabase Storage
+  storageProvider String  @default("supabase") // supabase, s3
+  storageBucket   String  @default("assets")
+  storagePath     String
+  fileUrl         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene   Scene?  @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([sceneId])
+  @@index([kind])
+  @@map("assets")
+}
+
+// ============================================
+// 9. 렌더링 작업
+// ============================================
+
+model RenderJob {
+  id           String    @id @default(cuid())
+  projectId    String
+  status       String    @default("pending") // pending, processing, completed, failed
+  traceId      String    @unique
+  params       Json?     @default("{}")
+  errorMessage String?   @db.Text
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("render_jobs")
+}
