@@ -52,7 +52,7 @@ export async function generateScript(
 2. 씬 구성: 8초씩 나눠서 총 ${duration / 8}개 씬 (Veo 3.1 영상 길이에 맞춤)
 3. 각 씬마다 다음 정보를 포함:
    - 대본 (script): 아바타가 말할 내용 (정확히 8초 분량)
-   - 시각적 설명 (visualDescription): 배경에 표시할 내용 설명
+   - 시각적 설명 (visualDescription): 배경에 표시할 내용 설명. 구체적인 조명, 질감, 카메라 앵글 등을 포함하여 포토리얼리스틱한 이미지를 생성할 수 있도록 상세히 묘사하세요. (예: "Cinematic lighting, 8k resolution, highly detailed texture")
    - 우선순위 (priority): "high" (중요), "medium" (보통), "low" (덜 중요)
 
 응답 형식 (JSON):
@@ -101,7 +101,7 @@ export async function generateScript(
  * Nano Banana - 커스텀 아바타 이미지 생성
  *
  * @param settings - 아바타 디자인 설정
- * @returns 생성된 이미지 Base64
+ * @returns 생성된 이미지 Buffer
  */
 export async function generateAvatarDesign(settings: {
   gender: string;
@@ -109,10 +109,59 @@ export async function generateAvatarDesign(settings: {
   style: string;
   expression: string;
   background: string;
-}): Promise<string> {
-  // TODO: Vertex AI Imagen API 구현
-  // 현재는 placeholder
-  throw new Error("Imagen API not implemented yet");
+}): Promise<Buffer> {
+  // 프롬프트 생성
+  const prompt = buildAvatarPrompt(settings);
+
+  const model = vertexAI.getGenerativeModel({
+    model: "imagen-3.0-generate-001",
+  });
+
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.4,
+      candidateCount: 1,
+    },
+  });
+
+  // 이미지 데이터 추출
+  const imageData = result.response.candidates?.[0]?.content?.parts?.[0];
+  if (!imageData || !("inlineData" in imageData)) {
+    throw new Error("No image data in Imagen response");
+  }
+
+  // Base64 디코딩하여 Buffer 반환
+  const base64Data = imageData.inlineData?.data || "";
+  return Buffer.from(base64Data, "base64");
+}
+
+/**
+ * 아바타 프롬프트 생성
+ */
+function buildAvatarPrompt(settings: {
+  gender: string;
+  ageRange: string;
+  style: string;
+  expression: string;
+  background: string;
+}): string {
+  const { gender, ageRange, style, expression, background } = settings;
+
+  return `
+A photorealistic portrait of a ${gender} person in their ${ageRange},
+${style} style, with a ${expression} expression.
+Background: ${background}.
+Professional headshot, centered composition, 1:1 aspect ratio,
+8k resolution, raw photo, hyper-realistic, detailed skin texture, cinematic lighting, depth of field,
+high quality, studio lighting, sharp focus.
+Front-facing view, suitable for video avatar animation.
+`.trim();
 }
 
 /**
@@ -152,8 +201,8 @@ export async function generateBackgroundImage(
  * @returns Operation 정보
  */
 export async function generateVeoVideo(
-  imageUrl: string,
-  prompt: string
+  _imageUrl: string,
+  _prompt: string
 ): Promise<{ name: string }> {
   // TODO: Veo 3.1 API 사용
   // 현재는 placeholder

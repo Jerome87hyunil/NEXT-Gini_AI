@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { inngest } from "@/lib/inngest/client";
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 
 /**
  * POST /api/webhooks/did

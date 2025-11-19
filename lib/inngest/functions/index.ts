@@ -7,6 +7,7 @@
 export { documentValidator } from "./documentValidator";
 export { sceneProcessor } from "./sceneProcessor";
 export { scriptGenerator } from "./scriptGenerator";
+export { avatarDesignGenerator } from "./avatarDesignGenerator";
 export { ttsGenerator } from "./ttsGenerator";
 export { avatarGenerator } from "./avatarGenerator";
 export { avatarPolling } from "./avatarPolling";
@@ -15,6 +16,3 @@ export { veoVideoGenerator } from "./veoVideoGenerator";
 export { veoVideoPolling } from "./veoVideoPolling";
 export { videoCompositor } from "./videoCompositor";
 export { videoRender } from "./videoRender";
-
-// TODO: 구현 필요
-// export { avatarDesignGenerator } from "./avatarDesignGenerator";

@@ -133,13 +133,13 @@ PDF 문서를 분석하여 ${project.duration}초 분량의 발표 대본을 생
 
     // Scene 레코드 생성
     const scenes = await Promise.all(
-      scriptData.scenes.map(async (scene: any, index: number) => {
+      scriptData.scenes.map(async (scene: { sceneNumber?: number; script?: string; text?: string; duration?: number; visualDescription?: string; priority?: string; emotion?: string }, index: number) => {
         return prisma.scene.create({
           data: {
             projectId,
             sceneNumber: scene.sceneNumber || index + 1,
             position: index,
-            script: scene.script,
+            script: scene.script || scene.text || "",
             duration: scene.duration || 8,
             durationSeconds: scene.duration || 8,
             visualDescription: scene.visualDescription || "",

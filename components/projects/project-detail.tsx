@@ -28,6 +28,7 @@ import {
 import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X } from "lucide-react";
 import { ProjectStatus } from "@/components/realtime/project-status";
 import { SceneProgress } from "@/components/realtime/scene-progress";
+import { VideoPlayer } from "@/components/video/video-player";
 
 interface Document {
   id: string;
@@ -66,7 +67,7 @@ interface Asset {
   kind: string;
   type: string;
   url: string;
-  metadata: any;
+  metadata: unknown;
   createdAt: string;
   updatedAt: string;
 }
@@ -78,7 +79,7 @@ interface Project {
   status: string;
   duration: number;
   avatarDesignMode: string;
-  avatarDesignSettings: any;
+  avatarDesignSettings: unknown;
   createdAt: string;
   updatedAt: string;
   documents?: Document[];
@@ -109,6 +110,7 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
 
   useEffect(() => {
     fetchProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   async function fetchProject() {
@@ -405,12 +407,6 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
         </CardContent>
         <CardFooter className="flex justify-between gap-2">
           <div className="flex gap-2">
-            {project.status === "rendered" && (
-              <Button variant="default">
-                <Film className="h-4 w-4 mr-2" />
-                영상 다운로드
-              </Button>
-            )}
             {(project._count?.documents ?? 0) > 0 && (project._count?.scenes ?? 0) === 0 && (
               <Button
                 onClick={handleGenerateScript}
@@ -455,6 +451,47 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
           </AlertDialog>
         </CardFooter>
       </Card>
+
+      {/* 최종 영상 */}
+      {project.status === "rendered" && project.assets && (
+        <Card>
+          <CardHeader>
+            <CardTitle>최종 영상</CardTitle>
+            <CardDescription>
+              렌더링이 완료된 최종 영상입니다
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const finalVideo = project.assets.find(
+                (asset) => asset.kind === "final_video"
+              );
+
+              if (!finalVideo) {
+                return (
+                  <div className="text-center py-8 text-muted-foreground">
+                    최종 영상을 찾을 수 없습니다
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  <VideoPlayer src={finalVideo.url} className="w-full max-w-4xl mx-auto" />
+                  <div className="flex justify-center">
+                    <Button asChild>
+                      <a href={finalVideo.url} download target="_blank" rel="noopener noreferrer">
+                        <Film className="h-4 w-4 mr-2" />
+                        영상 다운로드
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 실시간 상태 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -575,42 +612,46 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
                     alt="Custom Avatar"
                     className="w-64 h-64 rounded-lg object-cover border-2 border-border"
                   />
-                  {project.avatarDesignSettings && (
+                  {((): React.ReactNode => {
+                    if (!project.avatarDesignSettings) return null;
+                    const settings = project.avatarDesignSettings as { gender?: string; ageRange?: string; style?: string; expression?: string; background?: string };
+                    return (
                     <div className="grid grid-cols-2 gap-4 w-full max-w-md text-sm">
-                      {project.avatarDesignSettings.gender && (
+                      {settings.gender && (
                         <div>
                           <span className="text-muted-foreground">성별:</span>{" "}
                           <span className="font-medium">
-                            {project.avatarDesignSettings.gender === "male" ? "남성" : "여성"}
+                            {settings.gender === "male" ? "남성" : "여성"}
                           </span>
                         </div>
                       )}
-                      {project.avatarDesignSettings.ageRange && (
+                      {settings.ageRange && (
                         <div>
                           <span className="text-muted-foreground">나이:</span>{" "}
                           <span className="font-medium">
-                            {project.avatarDesignSettings.ageRange}
+                            {settings.ageRange}
                           </span>
                         </div>
                       )}
-                      {project.avatarDesignSettings.style && (
+                      {settings.style && (
                         <div>
                           <span className="text-muted-foreground">스타일:</span>{" "}
                           <span className="font-medium">
-                            {project.avatarDesignSettings.style}
+                            {settings.style}
                           </span>
                         </div>
                       )}
-                      {project.avatarDesignSettings.expression && (
+                      {settings.expression && (
                         <div>
                           <span className="text-muted-foreground">표정:</span>{" "}
                           <span className="font-medium">
-                            {project.avatarDesignSettings.expression}
+                            {settings.expression}
                           </span>
                         </div>
                       )}
                     </div>
-                  )}
+                  );
+                })()}
                 </div>
               );
             })()}

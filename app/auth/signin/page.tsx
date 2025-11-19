@@ -2,14 +2,14 @@
 
 import { signIn } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
@@ -51,7 +51,7 @@ export default function SignInPage() {
       } else if (result?.ok) {
         router.push(callbackUrl);
       }
-    } catch (error: any) {
+    } catch {
       setError("로그인 중 오류가 발생했습니다");
     } finally {
       setIsCredentialsLoading(false);
@@ -201,5 +201,13 @@ export default function SignInPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">로딩 중...</div>}>
+      <SignInForm />
+    </Suspense>
   );
 }

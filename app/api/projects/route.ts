@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { check, grant, NAMESPACES, RELATIONS } from "@/lib/permissions";
+import { grant, NAMESPACES, RELATIONS } from "@/lib/permissions";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -17,7 +17,7 @@ const createProjectSchema = z.object({
  * GET /api/projects
  * 프로젝트 목록 조회 (사용자가 접근 가능한 프로젝트만)
  */
-export async function GET(request: Request) {
+export async function GET() {
   const session = await auth();
 
   if (!session?.user?.id) {

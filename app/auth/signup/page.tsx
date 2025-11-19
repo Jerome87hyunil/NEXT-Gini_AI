@@ -41,8 +41,8 @@ export default function SignUpPage() {
 
       // 회원가입 성공 → 로그인 페이지로 이동
       router.push("/auth/signin?message=회원가입이 완료되었습니다. 로그인해주세요.");
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "회원가입 중 오류가 발생했습니다");
     } finally {
       setIsLoading(false);
     }
