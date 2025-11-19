@@ -2,6 +2,8 @@ import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
+import Credentials from "next-auth/providers/credentials";
+import { compare } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import type { NextAuthConfig } from "next-auth";
 
@@ -16,6 +18,51 @@ export const config = {
       clientId: process.env.GITHUB_ID!,
       clientSecret: process.env.GITHUB_SECRET!,
     }),
+    Credentials({
+      name: "credentials",
+      credentials: {
+        email: { label: "이메일", type: "email" },
+        password: { label: "비밀번호", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("이메일과 비밀번호를 입력해주세요");
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email as string },
+          include: { organization: true },
+        });
+
+        if (!user || !user.password) {
+          throw new Error("이메일 또는 비밀번호가 올바르지 않습니다");
+        }
+
+        const isPasswordValid = await compare(
+          credentials.password as string,
+          user.password
+        );
+
+        if (!isPasswordValid) {
+          throw new Error("이메일 또는 비밀번호가 올바르지 않습니다");
+        }
+
+        // 마지막 로그인 시간 업데이트
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastSignInAt: new Date() },
+        });
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          role: user.role,
+          organizationId: user.organizationId,
+        };
+      },
+    }),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
@@ -24,7 +71,12 @@ export const config = {
         return false;
       }
 
-      // 조직이 없는 사용자의 경우 기본 조직 생성 또는 할당
+      // Credentials provider는 별도 처리 불필요 (authorize에서 처리됨)
+      if (account?.provider === "credentials") {
+        return true;
+      }
+
+      // OAuth: 조직이 없는 사용자의 경우 기본 조직 생성 또는 할당
       const existingUser = await prisma.user.findUnique({
         where: { email: user.email },
         include: { organization: true },
@@ -52,26 +104,30 @@ export const config = {
 
       return true;
     },
-    async session({ session, user }) {
-      if (session.user) {
-        // 사용자 정보 확장
+    async jwt({ token, user, trigger }) {
+      // 초기 로그인 시 사용자 정보를 토큰에 추가
+      if (user) {
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
           include: { organization: true },
         });
 
         if (dbUser) {
-          session.user.id = dbUser.id;
-          session.user.role = dbUser.role;
-          session.user.organizationId = dbUser.organizationId;
-          session.user.organizationSlug = dbUser.organization.slug;
+          token.id = dbUser.id;
+          token.role = dbUser.role;
+          token.organizationId = dbUser.organizationId;
+          token.organizationSlug = dbUser.organization.slug;
         }
-
-        // 마지막 로그인 시간 업데이트
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastSignInAt: new Date() },
-        });
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      // 토큰에서 세션으로 사용자 정보 전달
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.organizationId = token.organizationId as string;
+        session.user.organizationSlug = token.organizationSlug as string;
       }
       return session;
     },
@@ -82,10 +138,10 @@ export const config = {
     error: "/auth/error",
   },
   session: {
-    strategy: "database",
+    strategy: "jwt", // Credentials provider requires JWT
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
-  debug: process.env.NODE_ENV === "development",
+  debug: false, // 개발 환경에서도 debug 로그 비활성화
 } satisfies NextAuthConfig;
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);

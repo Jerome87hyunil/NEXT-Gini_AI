@@ -103,6 +103,26 @@ export async function uploadFromUrl(
 }
 
 /**
+ * 파일 다운로드
+ *
+ * @param path - 파일 경로
+ * @returns Blob
+ */
+export async function downloadFile(path: string): Promise<Blob> {
+  const supabase = createServiceClient();
+
+  const { data, error } = await supabase.storage
+    .from(ASSETS_BUCKET)
+    .download(path);
+
+  if (error) {
+    throw new Error(`Failed to download file: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
  * 파일 삭제
  *
  * @param path - 삭제할 파일 경로

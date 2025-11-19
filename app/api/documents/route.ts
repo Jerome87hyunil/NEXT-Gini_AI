@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { check, NAMESPACES, RELATIONS } from "@/lib/permissions";
 import { uploadFile } from "@/lib/supabase/storage";
-import { inngest } from "@/lib/inngest/client";
+import { sendEvent } from "@/lib/inngest/client";
 import { NextResponse } from "next/server";
 
 /**
@@ -58,7 +58,14 @@ export async function POST(request: Request) {
     }
 
     // Supabase Storage에 업로드
-    const storagePath = `projects/${projectId}/documents/${file.name}`;
+    // 파일명 안전화: 한글 및 특수문자 제거, 공백을 언더스코어로 변환
+    const timestamp = Date.now();
+    const safeFileName = file.name
+      .replace(/[^a-zA-Z0-9.]/g, "_") // 영문, 숫자, 마침표만 허용
+      .replace(/_+/g, "_") // 연속 언더스코어 제거
+      .replace(/^_|_$/g, ""); // 앞뒤 언더스코어 제거
+
+    const storagePath = `projects/${projectId}/documents/${timestamp}_${safeFileName}`;
     const { url, path } = await uploadFile(file, storagePath);
 
     // Document 레코드 생성
@@ -78,7 +85,7 @@ export async function POST(request: Request) {
     });
 
     // Inngest 이벤트 전송: 문서 검증 시작
-    await inngest.send({
+    await sendEvent({
       name: "document/validate.requested",
       data: {
         documentId: document.id,
@@ -90,6 +97,21 @@ export async function POST(request: Request) {
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
     console.error("Failed to upload document:", error);
-    return new Response("Internal Server Error", { status: 500 });
+
+    // 에러 타입별 메시지
+    let errorMessage = "문서 업로드에 실패했습니다.";
+
+    if (error instanceof Error) {
+      if (error.message.includes("Bucket not found")) {
+        errorMessage =
+          "Storage 버킷이 설정되지 않았습니다. 'npm run storage:setup'을 실행하세요.";
+      } else if (error.message.includes("Invalid key")) {
+        errorMessage = "파일 경로가 올바르지 않습니다. 다시 시도해주세요.";
+      } else {
+        errorMessage = error.message;
+      }
+    }
+
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

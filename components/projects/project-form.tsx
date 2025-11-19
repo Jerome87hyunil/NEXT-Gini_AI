@@ -32,6 +32,13 @@ export function ProjectForm() {
     description: "",
     duration: 30,
     avatarDesignMode: "preset" as "preset" | "custom",
+    avatarDesignSettings: {
+      gender: "female" as "male" | "female",
+      ageRange: "30s" as "20s" | "30s" | "40s" | "50s",
+      style: "professional" as "professional" | "casual" | "friendly",
+      expression: "neutral" as "neutral" | "smile" | "confident",
+      background: "gradient" as "gradient" | "solid" | "office",
+    },
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,7 +61,7 @@ export function ProjectForm() {
       }
 
       const data = await response.json();
-      router.push(`/dashboard/projects/${data.project.id}`);
+      router.push(`/dashboard/projects/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "알 수 없는 오류");
       setLoading(false);
@@ -175,6 +182,149 @@ export function ProjectForm() {
                 </div>
               </label>
             </div>
+
+            {/* 커스텀 아바타 상세 설정 */}
+            {formData.avatarDesignMode === "custom" && (
+              <div className="mt-4 p-4 border rounded-lg bg-muted/50 space-y-4">
+                <h4 className="font-medium text-sm">커스텀 아바타 설정</h4>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 성별 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="gender">성별</Label>
+                    <Select
+                      value={formData.avatarDesignSettings.gender}
+                      onValueChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          avatarDesignSettings: {
+                            ...formData.avatarDesignSettings,
+                            gender: value as "male" | "female",
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger id="gender">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="female">여성</SelectItem>
+                        <SelectItem value="male">남성</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 나이대 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="ageRange">나이대</Label>
+                    <Select
+                      value={formData.avatarDesignSettings.ageRange}
+                      onValueChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          avatarDesignSettings: {
+                            ...formData.avatarDesignSettings,
+                            ageRange: value as "20s" | "30s" | "40s" | "50s",
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger id="ageRange">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="20s">20대</SelectItem>
+                        <SelectItem value="30s">30대</SelectItem>
+                        <SelectItem value="40s">40대</SelectItem>
+                        <SelectItem value="50s">50대</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 스타일 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="style">스타일</Label>
+                    <Select
+                      value={formData.avatarDesignSettings.style}
+                      onValueChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          avatarDesignSettings: {
+                            ...formData.avatarDesignSettings,
+                            style: value as "professional" | "casual" | "friendly",
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger id="style">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="professional">전문적</SelectItem>
+                        <SelectItem value="casual">캐주얼</SelectItem>
+                        <SelectItem value="friendly">친근한</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 표정 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="expression">표정</Label>
+                    <Select
+                      value={formData.avatarDesignSettings.expression}
+                      onValueChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          avatarDesignSettings: {
+                            ...formData.avatarDesignSettings,
+                            expression: value as "neutral" | "smile" | "confident",
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger id="expression">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="neutral">중립</SelectItem>
+                        <SelectItem value="smile">미소</SelectItem>
+                        <SelectItem value="confident">자신감</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* 배경 */}
+                <div className="space-y-2">
+                  <Label htmlFor="background">배경</Label>
+                  <Select
+                    value={formData.avatarDesignSettings.background}
+                    onValueChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        avatarDesignSettings: {
+                          ...formData.avatarDesignSettings,
+                          background: value as "gradient" | "solid" | "office",
+                        },
+                      })
+                    }
+                  >
+                    <SelectTrigger id="background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="gradient">그라데이션</SelectItem>
+                      <SelectItem value="solid">단색</SelectItem>
+                      <SelectItem value="office">오피스</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  설정에 따라 AI가 맞춤형 아바타를 생성합니다 (Nano Banana 이용)
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
         <CardFooter className="flex justify-between">

@@ -49,9 +49,9 @@ export async function generateScript(
 
 요구사항:
 1. 전체 영상 길이: 정확히 ${duration}초
-2. 씬 구성: 15초씩 나눠서 총 ${duration / 15}개 씬
+2. 씬 구성: 8초씩 나눠서 총 ${duration / 8}개 씬 (Veo 3.1 영상 길이에 맞춤)
 3. 각 씬마다 다음 정보를 포함:
-   - 대본 (script): 아바타가 말할 내용
+   - 대본 (script): 아바타가 말할 내용 (정확히 8초 분량)
    - 시각적 설명 (visualDescription): 배경에 표시할 내용 설명
    - 우선순위 (priority): "high" (중요), "medium" (보통), "low" (덜 중요)
 

@@ -83,16 +83,32 @@ npx prisma generate
 ### 4. 권한 정의 Seed
 
 ```bash
-npm run seed
+npm run db:seed
 ```
 
-### 5. 개발 서버 실행
+### 5. Supabase Storage 버킷 생성
+
+```bash
+npm run storage:setup
+```
+
+이 명령은 자동으로 다음을 수행합니다:
+- `assets` 버킷 생성 (공개, 10MB 제한)
+- Storage 정책 설정 (읽기/쓰기 권한)
+
+**또는 수동으로 설정**:
+1. Supabase Dashboard > Storage 접속
+2. "Create a new bucket" 클릭
+3. 버킷 이름: `assets`, Public: ✅, Size limit: 10MB
+4. 또는 `prisma/migrations/storage_setup.sql` 파일을 SQL Editor에서 실행
+
+### 6. 개발 서버 실행
 
 ```bash
 npm run dev
 ```
 
-브라우저에서 http://localhost:3000 접속
+브라우저에서 http://localhost:3001 접속
 
 ## 📂 프로젝트 구조
 

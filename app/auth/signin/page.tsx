@@ -1,15 +1,25 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 export default function SignInPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
-  const [isLoading, setIsLoading] = useState(false);
+  const message = searchParams.get("message");
 
-  const handleSignIn = async (provider: "google" | "github") => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCredentialsLoading, setIsCredentialsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleOAuthSignIn = async (provider: "google" | "github") => {
     setIsLoading(true);
     try {
       await signIn(provider, { callbackUrl });
@@ -19,10 +29,44 @@ export default function SignInPage() {
     }
   };
 
+  const handleCredentialsSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsCredentialsLoading(true);
+    setError("");
+
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    try {
+      const result = await signIn("credentials", {
+        email,
+        password,
+        callbackUrl,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError(result.error);
+      } else if (result?.ok) {
+        router.push(callbackUrl);
+      }
+    } catch (error: any) {
+      setError("로그인 중 오류가 발생했습니다");
+    } finally {
+      setIsCredentialsLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center">
+              <span className="text-white font-bold text-3xl">G</span>
+            </div>
+          </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Gini AI에 로그인
           </h1>
@@ -31,9 +75,67 @@ export default function SignInPage() {
           </p>
         </div>
 
-        <div className="space-y-4">
+        {/* 성공 메시지 */}
+        {message && (
+          <div className="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md text-sm">
+            {message}
+          </div>
+        )}
+
+        {/* 이메일/비밀번호 로그인 */}
+        <form onSubmit={handleCredentialsSignIn} className="space-y-4 mb-6">
+          <div className="space-y-2">
+            <Label htmlFor="email">이메일</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="hong@example.com"
+              required
+              disabled={isCredentialsLoading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">비밀번호</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="비밀번호를 입력하세요"
+              required
+              disabled={isCredentialsLoading}
+            />
+          </div>
+
+          {/* 에러 메시지 */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+              {error}
+            </div>
+          )}
+
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isCredentialsLoading}
+          >
+            {isCredentialsLoading ? "로그인 중..." : "이메일로 로그인"}
+          </Button>
+        </form>
+
+        {/* 구분선 */}
+        <div className="relative my-6">
+          <Separator />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="bg-white px-2 text-sm text-gray-500">또는</span>
+          </div>
+        </div>
+
+        {/* OAuth 로그인 */}
+        <div className="space-y-3">
           <button
-            onClick={() => handleSignIn("google")}
+            onClick={() => handleOAuthSignIn("google")}
             disabled={isLoading}
             className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 text-gray-700 rounded-lg px-4 py-3 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
@@ -55,11 +157,11 @@ export default function SignInPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Google로 로그인
+            Google로 계속하기
           </button>
 
           <button
-            onClick={() => handleSignIn("github")}
+            onClick={() => handleOAuthSignIn("github")}
             disabled={isLoading}
             className="w-full flex items-center justify-center gap-3 bg-gray-900 text-white rounded-lg px-4 py-3 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
@@ -70,10 +172,22 @@ export default function SignInPage() {
                 clipRule="evenodd"
               />
             </svg>
-            GitHub으로 로그인
+            GitHub으로 계속하기
           </button>
         </div>
 
+        {/* 회원가입 링크 */}
+        <div className="mt-6 text-center text-sm">
+          계정이 없으신가요?{" "}
+          <Link
+            href="/auth/signup"
+            className="text-blue-600 hover:text-blue-700 font-semibold"
+          >
+            회원가입
+          </Link>
+        </div>
+
+        {/* 약관 */}
         <p className="mt-6 text-center text-sm text-gray-600">
           로그인함으로써{" "}
           <a href="#" className="text-blue-600 hover:underline">

@@ -41,7 +41,7 @@ export function ProjectList() {
         throw new Error("프로젝트 목록을 불러오는데 실패했습니다.");
       }
       const data = await response.json();
-      setProjects(data.projects || []);
+      setProjects(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {

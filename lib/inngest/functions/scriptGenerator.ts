@@ -58,7 +58,7 @@ export const scriptGenerator = inngest.createFunction(
         buffer = Buffer.from((pdfBuffer as { type: string; data: number[] }).data);
       } else {
         // ArrayBuffer or other
-        buffer = Buffer.from(pdfBuffer as ArrayBuffer);
+        buffer = Buffer.from(pdfBuffer as unknown as ArrayBuffer);
       }
       return buffer.toString("base64");
     });

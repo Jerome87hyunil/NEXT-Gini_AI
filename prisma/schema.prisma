@@ -41,6 +41,7 @@ model User {
   emailVerified  DateTime?
   name           String?
   image          String?
+  password       String?   // bcrypt hashed password (nullable for OAuth users)
   role           String    @default("member") // admin, member
   organizationId String
   lastSignInAt   DateTime?

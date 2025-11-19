@@ -13,9 +13,63 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Film, FileText, Upload, Play } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X } from "lucide-react";
 import { ProjectStatus } from "@/components/realtime/project-status";
 import { SceneProgress } from "@/components/realtime/scene-progress";
+
+interface Document {
+  id: string;
+  projectId: string;
+  status: string;
+  metadata: {
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    uploadedBy?: string;
+  };
+  storagePath: string;
+  fileUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Scene {
+  id: string;
+  projectId: string;
+  sceneNumber: number;
+  position: number;
+  script: string;
+  duration: number;
+  visualDescription: string;
+  ttsStatus: string;
+  avatarStatus: string;
+  backgroundStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Asset {
+  id: string;
+  projectId: string;
+  kind: string;
+  type: string;
+  url: string;
+  metadata: any;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface Project {
   id: string;
@@ -24,8 +78,12 @@ interface Project {
   status: string;
   duration: number;
   avatarDesignMode: string;
+  avatarDesignSettings: any;
   createdAt: string;
   updatedAt: string;
+  documents?: Document[];
+  scenes?: Scene[];
+  assets?: Asset[];
   _count?: {
     documents: number;
     scenes: number;
@@ -42,6 +100,12 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [generatingScript, setGeneratingScript] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [editedScript, setEditedScript] = useState("");
+  const [editedVisualDescription, setEditedVisualDescription] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -54,7 +118,7 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
         throw new Error("프로젝트를 불러오는데 실패했습니다.");
       }
       const data = await response.json();
-      setProject(data.project);
+      setProject(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {
@@ -89,7 +153,27 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
 
       // 프로젝트 정보 새로고침
       await fetchProject();
-      alert("문서가 성공적으로 업로드되었습니다.");
+
+      // 자동으로 스크립트 생성 시작
+      try {
+        const scriptResponse = await fetch(`/api/projects/${projectId}/generate-script`, {
+          method: "POST",
+        });
+
+        if (!scriptResponse.ok) {
+          const data = await scriptResponse.json();
+          throw new Error(data.error || "스크립트 생성에 실패했습니다.");
+        }
+
+        alert("문서가 업로드되었고 스크립트 생성이 완료되었습니다.");
+        await fetchProject(); // 스크립트 생성 결과 반영
+      } catch (scriptErr) {
+        alert(
+          `문서 업로드는 성공했으나 스크립트 생성 실패: ${
+            scriptErr instanceof Error ? scriptErr.message : "알 수 없는 오류"
+          }`
+        );
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {
@@ -114,6 +198,93 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
       await fetchProject();
     } catch (err) {
       alert(err instanceof Error ? err.message : "알 수 없는 오류");
+    }
+  }
+
+  async function handleGenerateScript() {
+    if (!confirm("스크립트를 생성하시겠습니까?")) return;
+
+    setGeneratingScript(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/generate-script`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "스크립트 생성에 실패했습니다.");
+      }
+
+      alert("스크립트 생성이 완료되었습니다.");
+      await fetchProject();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "알 수 없는 오류");
+    } finally {
+      setGeneratingScript(false);
+    }
+  }
+
+  async function handleDeleteProject() {
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "프로젝트 삭제에 실패했습니다.");
+      }
+
+      alert("프로젝트가 삭제되었습니다.");
+      router.push("/dashboard/projects");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "알 수 없는 오류");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function handleStartEdit(scene: Scene) {
+    setEditingSceneId(scene.id);
+    setEditedScript(scene.script);
+    setEditedVisualDescription(scene.visualDescription || "");
+  }
+
+  function handleCancelEdit() {
+    setEditingSceneId(null);
+    setEditedScript("");
+    setEditedVisualDescription("");
+  }
+
+  async function handleSaveEdit(sceneId: string) {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          script: editedScript,
+          visualDescription: editedVisualDescription,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Scene 업데이트에 실패했습니다.");
+      }
+
+      alert("스크립트가 수정되었습니다.");
+      setEditingSceneId(null);
+      setEditedScript("");
+      setEditedVisualDescription("");
+      await fetchProject(); // 변경사항 반영
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "알 수 없는 오류");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -232,19 +403,56 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
             </div>
           </div>
         </CardContent>
-        <CardFooter className="flex gap-2">
-          {project.status === "rendered" && (
-            <Button variant="default">
-              <Film className="h-4 w-4 mr-2" />
-              영상 다운로드
-            </Button>
-          )}
-          {project.status !== "rendering" && project.status !== "rendered" && (
-            <Button onClick={handleStartRender}>
-              <Play className="h-4 w-4 mr-2" />
-              렌더링 시작
-            </Button>
-          )}
+        <CardFooter className="flex justify-between gap-2">
+          <div className="flex gap-2">
+            {project.status === "rendered" && (
+              <Button variant="default">
+                <Film className="h-4 w-4 mr-2" />
+                영상 다운로드
+              </Button>
+            )}
+            {(project._count?.documents ?? 0) > 0 && (project._count?.scenes ?? 0) === 0 && (
+              <Button
+                onClick={handleGenerateScript}
+                disabled={generatingScript}
+                variant="secondary"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                {generatingScript ? "스크립트 생성 중..." : "스크립트 생성"}
+              </Button>
+            )}
+            {project.status !== "rendering" && project.status !== "rendered" && (
+              <Button onClick={handleStartRender}>
+                <Play className="h-4 w-4 mr-2" />
+                렌더링 시작
+              </Button>
+            )}
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm" disabled={deleting}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleting ? "삭제 중..." : "프로젝트 삭제"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>정말로 삭제하시겠습니까?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  이 작업은 되돌릴 수 없습니다. 프로젝트와 관련된 모든 데이터(문서, 스크립트, 생성된 자산)가 영구적으로 삭제됩니다.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>취소</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteProject}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  삭제
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardFooter>
       </Card>
 
@@ -282,6 +490,265 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* 업로드된 문서 목록 */}
+      {project.documents && project.documents.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>업로드된 문서</CardTitle>
+            <CardDescription>
+              프로젝트에 업로드된 PDF 문서 목록
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {project.documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">
+                        {doc.metadata?.fileName || "문서"}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {doc.metadata?.fileSize
+                          ? `${(doc.metadata.fileSize / 1024 / 1024).toFixed(2)} MB`
+                          : ""}{" "}
+                        · {new Date(doc.createdAt).toLocaleDateString("ko-KR")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full ${
+                        doc.status === "completed"
+                          ? "bg-green-100 text-green-800"
+                          : doc.status === "processing"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      {doc.status === "completed"
+                        ? "완료"
+                        : doc.status === "processing"
+                        ? "처리 중"
+                        : "대기"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 아바타 미리보기 */}
+      {project.avatarDesignMode === "custom" && project.assets && (
+        <Card>
+          <CardHeader>
+            <CardTitle>커스텀 아바타</CardTitle>
+            <CardDescription>
+              AI가 생성한 커스텀 아바타 디자인
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const avatarAsset = project.assets.find(
+                (asset) => asset.kind === "avatar_design"
+              );
+
+              if (!avatarAsset) {
+                return (
+                  <div className="text-center py-8 text-muted-foreground">
+                    아바타 디자인이 아직 생성되지 않았습니다.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="flex flex-col items-center gap-4">
+                  <img
+                    src={avatarAsset.url}
+                    alt="Custom Avatar"
+                    className="w-64 h-64 rounded-lg object-cover border-2 border-border"
+                  />
+                  {project.avatarDesignSettings && (
+                    <div className="grid grid-cols-2 gap-4 w-full max-w-md text-sm">
+                      {project.avatarDesignSettings.gender && (
+                        <div>
+                          <span className="text-muted-foreground">성별:</span>{" "}
+                          <span className="font-medium">
+                            {project.avatarDesignSettings.gender === "male" ? "남성" : "여성"}
+                          </span>
+                        </div>
+                      )}
+                      {project.avatarDesignSettings.ageRange && (
+                        <div>
+                          <span className="text-muted-foreground">나이:</span>{" "}
+                          <span className="font-medium">
+                            {project.avatarDesignSettings.ageRange}
+                          </span>
+                        </div>
+                      )}
+                      {project.avatarDesignSettings.style && (
+                        <div>
+                          <span className="text-muted-foreground">스타일:</span>{" "}
+                          <span className="font-medium">
+                            {project.avatarDesignSettings.style}
+                          </span>
+                        </div>
+                      )}
+                      {project.avatarDesignSettings.expression && (
+                        <div>
+                          <span className="text-muted-foreground">표정:</span>{" "}
+                          <span className="font-medium">
+                            {project.avatarDesignSettings.expression}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 생성된 스크립트 */}
+      {project.scenes && project.scenes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>생성된 스크립트</CardTitle>
+            <CardDescription>
+              AI가 생성한 {project.scenes.length}개 씬의 발표 대본
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {project.scenes.map((scene) => {
+                const isEditing = editingSceneId === scene.id;
+
+                return (
+                  <div
+                    key={scene.id}
+                    className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+                          {scene.sceneNumber}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          씬 {scene.sceneNumber} ({scene.duration}초)
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            scene.ttsStatus === "completed"
+                              ? "bg-green-100 text-green-800"
+                              : scene.ttsStatus === "processing"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          TTS: {scene.ttsStatus === "completed" ? "완료" : scene.ttsStatus === "processing" ? "진행중" : "대기"}
+                        </span>
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            scene.avatarStatus === "completed"
+                              ? "bg-green-100 text-green-800"
+                              : scene.avatarStatus === "processing"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          아바타: {scene.avatarStatus === "completed" ? "완료" : scene.avatarStatus === "processing" ? "진행중" : "대기"}
+                        </span>
+                        {!isEditing && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleStartEdit(scene)}
+                            className="h-6 px-2"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isEditing ? (
+                      <div className="space-y-3">
+                        <div>
+                          <Label htmlFor="edit-script" className="text-xs text-muted-foreground mb-1">
+                            스크립트
+                          </Label>
+                          <Textarea
+                            id="edit-script"
+                            value={editedScript}
+                            onChange={(e) => setEditedScript(e.target.value)}
+                            className="min-h-[100px] text-sm"
+                            placeholder="스크립트를 입력하세요..."
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-visual" className="text-xs text-muted-foreground mb-1">
+                            배경 설명
+                          </Label>
+                          <Textarea
+                            id="edit-visual"
+                            value={editedVisualDescription}
+                            onChange={(e) => setEditedVisualDescription(e.target.value)}
+                            className="min-h-[60px] text-sm"
+                            placeholder="배경 설명을 입력하세요..."
+                          />
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCancelEdit}
+                            disabled={saving}
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            취소
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleSaveEdit(scene.id)}
+                            disabled={saving}
+                          >
+                            <Save className="h-4 w-4 mr-1" />
+                            {saving ? "저장 중..." : "저장"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm leading-relaxed">{scene.script}</p>
+                        {scene.visualDescription && (
+                          <div className="mt-3 pt-3 border-t">
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-medium">배경 설명:</span>{" "}
+                              {scene.visualDescription}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 씬 진행 상황 */}
       <SceneProgress projectId={projectId} />
