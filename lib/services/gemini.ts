@@ -124,8 +124,9 @@ export async function generateAvatarDesign(settings: {
   // 프롬프트 생성
   const prompt = buildAvatarPrompt(settings);
 
+  // Nano Banana 모델 사용 (커스텀 아바타 이미지 생성)
   const model = vertexAI.getGenerativeModel({
-    model: "imagen-3.0-generate-001",
+    model: "nanobana-001", // Nano Banana 모델
   });
 
   const result = await model.generateContent({
@@ -144,7 +145,7 @@ export async function generateAvatarDesign(settings: {
   // 이미지 데이터 추출
   const imageData = result.response.candidates?.[0]?.content?.parts?.[0];
   if (!imageData || !("inlineData" in imageData)) {
-    throw new Error("No image data in Imagen response");
+    throw new Error("No image data in Nano Banana response");
   }
 
   // Base64 디코딩하여 Buffer 반환

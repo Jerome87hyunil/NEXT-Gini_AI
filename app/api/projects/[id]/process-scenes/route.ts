@@ -54,23 +54,45 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     // 커스텀 아바타 모드면 아바타 디자인 생성 이벤트 먼저 전송
     if (project.avatarDesignMode === "custom" && project.avatarDesignStatus !== "completed") {
-      await inngest.send({
-        name: "avatar-design/generation.requested",
-        data: {
-          projectId: id,
-        },
-      });
+      try {
+        await inngest.send({
+          name: "avatar-design/generation.requested",
+          data: {
+            projectId: id,
+          },
+        });
+      } catch (inngestError) {
+        console.error("Inngest connection failed:", inngestError);
+        return NextResponse.json(
+          {
+            error: "Inngest 서버에 연결할 수 없습니다. 'npm run inngest:dev'를 실행해주세요.",
+            details: inngestError instanceof Error ? inngestError.message : String(inngestError),
+          },
+          { status: 503 }
+        );
+      }
     }
 
     // Inngest 이벤트 전송: 첫 번째 씬 처리 시작
-    await inngest.send({
-      name: "scene/process.requested",
-      data: {
-        projectId: id,
-        sceneId: project.scenes[0].id,
-        userId: session.user.id,
-      },
-    });
+    try {
+      await inngest.send({
+        name: "scene/process.requested",
+        data: {
+          projectId: id,
+          sceneId: project.scenes[0].id,
+          userId: session.user.id,
+        },
+      });
+    } catch (inngestError) {
+      console.error("Inngest connection failed:", inngestError);
+      return NextResponse.json(
+        {
+          error: "Inngest 서버에 연결할 수 없습니다. 'npm run inngest:dev'를 실행해주세요.",
+          details: inngestError instanceof Error ? inngestError.message : String(inngestError),
+        },
+        { status: 503 }
+      );
+    }
 
     return NextResponse.json({
       message: "씬 처리가 시작되었습니다",
@@ -79,6 +101,20 @@ export async function POST(request: Request, { params }: { params: Params }) {
     });
   } catch (error) {
     console.error("Failed to start scene processing:", error);
-    return new Response("Internal Server Error", { status: 500 });
+
+    if (error instanceof Error && error.message.includes("fetch failed")) {
+      return NextResponse.json(
+        {
+          error: "Inngest 서버에 연결할 수 없습니다. 'npm run inngest:dev'를 실행해주세요.",
+          details: error.message,
+        },
+        { status: 503 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
