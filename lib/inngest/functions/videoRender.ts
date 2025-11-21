@@ -1,6 +1,10 @@
 import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
 import { uploadFromBuffer } from "@/lib/supabase/storage";
+import { FFmpegService } from "@/lib/services/ffmpeg";
+import { promises as fs } from "fs";
+import path from "path";
+import os from "os";
 
 interface SceneData {
   sceneNumber: number;
@@ -12,7 +16,7 @@ interface SceneData {
 }
 
 export const videoRender = inngest.createFunction(
-  { id: "video-render" },
+  { id: "video-render", retries: 1 },
   { event: "video/render.requested" },
   async ({ event, step }) => {
     const { projectId, sceneData } = event.data as {
@@ -20,43 +24,139 @@ export const videoRender = inngest.createFunction(
       sceneData: SceneData[];
     };
 
-    // NOTE: 실제 FFmpeg 처리는 AWS Lambda나 별도 서비스에서 수행
-    // 여기서는 플레이스홀더 구현
-
-    // 1. 씬별 비디오 다운로드 및 FFmpeg 준비 (실제 구현 필요)
-    await step.run("download-scene-assets", async () => {
-      // TODO: Supabase Storage에서 모든 자산 다운로드
-      // - 각 씬의 오디오, 아바타, 배경 다운로드
-      // - 로컬 임시 디렉토리에 저장
-      return { downloaded: true };
+    // 0. FFmpeg 설치 확인
+    const ffmpegAvailable = await step.run("check-ffmpeg", async () => {
+      return await FFmpegService.isFFmpegAvailable();
     });
 
-    // 2. FFmpeg 명령 실행 (실제 구현 필요)
-    const finalVideoBuffer = await step.run("execute-ffmpeg", async () => {
-      // TODO: FFmpeg 비디오 합성
-      // 1. 씬별로 배경 + 아바타 합성
-      // 2. 오디오 믹싱
-      // 3. 씬 연결 (concat)
-      // 4. 최종 인코딩
-
-      // 플레이스홀더: 빈 버퍼 반환
+    if (!ffmpegAvailable) {
       throw new Error(
-        "FFmpeg video rendering not implemented - requires AWS Lambda or external service"
+        "FFmpeg is not installed. Please install FFmpeg to render videos."
+      );
+    }
+
+    const ffmpeg = new FFmpegService();
+
+    // 1. 임시 디렉토리 생성
+    const tempDir = await step.run("create-temp-directory", async () => {
+      const dir = path.join(
+        os.tmpdir(),
+        `render_${projectId}_${Date.now()}`
+      );
+      await fs.mkdir(dir, { recursive: true });
+      return dir;
+    });
+
+    // 2. 씬별 자산 다운로드 및 배경 합성
+    const composedScenes: string[] = [];
+
+    for (let i = 0; i < sceneData.length; i++) {
+      const scene = sceneData[i];
+
+      const composedScenePath = await step.run(
+        `compose-scene-${scene.sceneNumber}`,
+        async () => {
+          // 2-1. 배경 다운로드
+          const backgroundExt = scene.backgroundType.includes("video")
+            ? ".mp4"
+            : ".png";
+          const backgroundPath = path.join(
+            tempDir,
+            `bg_${scene.sceneNumber}${backgroundExt}`
+          );
+
+          const bgResponse = await fetch(scene.backgroundUrl);
+          const bgBuffer = Buffer.from(await bgResponse.arrayBuffer());
+          await fs.writeFile(backgroundPath, bgBuffer);
+
+          // 2-2. 아바타 비디오 다운로드
+          const avatarPath = path.join(
+            tempDir,
+            `avatar_${scene.sceneNumber}.mp4`
+          );
+
+          const avatarResponse = await fetch(scene.avatarUrl);
+          const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
+          await fs.writeFile(avatarPath, avatarBuffer);
+
+          // 2-3. 배경 + 아바타 합성
+          const composedPath = path.join(
+            tempDir,
+            `composed_${scene.sceneNumber}.mp4`
+          );
+
+          const command = ffmpeg.buildCompositionCommand(
+            backgroundPath,
+            avatarPath,
+            composedPath
+          );
+
+          await ffmpeg.executeCommand(
+            command,
+            `Scene ${scene.sceneNumber} composition`
+          );
+
+          return composedPath;
+        }
       );
 
-      // return Buffer.from("");
+      composedScenes.push(composedScenePath);
+    }
+
+    // 3. 모든 씬 연결 (concat)
+    const finalVideoPath = await step.run("concatenate-scenes", async () => {
+      if (composedScenes.length === 1) {
+        return composedScenes[0]; // 씬이 1개면 concat 불필요
+      }
+
+      // concat 파일 생성
+      const concatFilePath = path.join(tempDir, "concat.txt");
+      await ffmpeg.createConcatFile(composedScenes, concatFilePath);
+
+      // 최종 비디오 경로
+      const finalPath = path.join(tempDir, "final_video.mp4");
+
+      // concat 명령 실행
+      const command = ffmpeg.buildConcatenationCommand(
+        concatFilePath,
+        finalPath
+      );
+
+      await ffmpeg.executeCommand(command, "Scene concatenation");
+
+      return finalPath;
     });
 
-    // 3. 최종 비디오 업로드
-    const videoUrl = await step.run("upload-final-video", async () => {
-      const fileName = `final_video.mp4`;
-      const storagePath = `projects/${projectId}/final/${fileName}`;
+    // 4. 최종 비디오 파일 읽기 및 업로드
+    const { videoUrl, storagePath } = await step.run(
+      "upload-final-video",
+      async () => {
+        const videoBuffer = await fs.readFile(finalVideoPath);
 
-      const { url } = await uploadFromBuffer(finalVideoBuffer, storagePath, "video/mp4");
-      return url;
-    });
+        const fileName = `final_video.mp4`;
+        const storagePath = `projects/${projectId}/final/${fileName}`;
 
-    // 4. Asset 생성
+        const { url, path } = await uploadFromBuffer(
+          videoBuffer,
+          storagePath,
+          "video/mp4"
+        );
+
+        return { videoUrl: url, storagePath: path };
+      }
+    );
+
+    // 5. 비디오 duration 및 파일 크기 조회
+    const { duration, fileSize } = await step.run(
+      "get-video-metadata",
+      async () => {
+        const duration = await ffmpeg.getVideoDuration(finalVideoPath);
+        const stats = await fs.stat(finalVideoPath);
+        return { duration, fileSize: stats.size };
+      }
+    );
+
+    // 6. Asset 생성
     const asset = await step.run("create-final-video-asset", async () => {
       return await prisma.asset.create({
         data: {
@@ -64,17 +164,18 @@ export const videoRender = inngest.createFunction(
           kind: "final_video",
           type: "final_video",
           url: videoUrl,
-          storagePath: `projects/${projectId}/final/final_video.mp4`,
+          storagePath,
           metadata: {
             sceneCount: sceneData.length,
-            totalDuration: sceneData.reduce((sum, s) => sum + s.duration, 0),
+            totalDuration: duration,
+            fileSize,
             renderedAt: new Date().toISOString(),
           },
         },
       });
     });
 
-    // 5. 프로젝트 상태 업데이트 (rendered)
+    // 7. 프로젝트 상태 업데이트 (rendered)
     await step.run("update-project-status-rendered", async () => {
       await prisma.project.update({
         where: { id: projectId },
@@ -85,11 +186,23 @@ export const videoRender = inngest.createFunction(
       });
     });
 
+    // 8. 임시 파일 정리
+    await step.run("cleanup-temp-files", async () => {
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (error) {
+        console.error(`Failed to cleanup temp directory: ${error}`);
+        // 정리 실패는 무시 (중요하지 않음)
+      }
+    });
+
     return {
       success: true,
       projectId,
       assetId: asset.id,
       videoUrl,
+      duration,
+      fileSize,
     };
   }
 );
