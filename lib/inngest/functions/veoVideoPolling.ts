@@ -17,14 +17,22 @@ export const veoVideoPolling = inngest.createFunction(
 
     // Veo LRO 상태 확인 (실제 API 호출)
     console.log(`🔍 Checking Veo operation status: ${operationName}`);
-    const result = await step.run("check-veo-operation", async () => {
-      return await checkVeoOperation(operationName);
+    const statusCheck = await step.run("check-veo-operation", async () => {
+      const result = await checkVeoOperation(operationName);
+
+      // ⚠️ IMPORTANT: videoBuffer는 Step Output 크기 제한(512KB)을 초과하므로 반환하지 않음
+      // 대신 done, error 상태만 반환
+      return {
+        done: result.done,
+        error: result.error,
+        // videoBuffer는 제외 (대용량 데이터)
+      };
     });
 
-    console.log(`📊 Veo operation status: done=${result.done}, error=${result.error || "none"}`);
+    console.log(`📊 Veo operation status: done=${statusCheck.done}, error=${statusCheck.error || "none"}`);
 
     // 작업이 아직 진행 중인 경우
-    if (!result.done) {
+    if (!statusCheck.done) {
       if (currentAttempt >= maxAttempts) {
         console.error(`❌ Veo polling timeout after ${maxAttempts} attempts`);
 
@@ -74,8 +82,8 @@ export const veoVideoPolling = inngest.createFunction(
     }
 
     // 에러가 발생한 경우
-    if (result.error) {
-      console.error(`❌ Veo operation failed: ${result.error}`);
+    if (statusCheck.error) {
+      console.error(`❌ Veo operation failed: ${statusCheck.error}`);
 
       // RenderJob 실패 처리
       await step.run("mark-render-job-error", async () => {
@@ -86,7 +94,7 @@ export const veoVideoPolling = inngest.createFunction(
           },
           data: {
             status: "failed",
-            errorMessage: result.error,
+            errorMessage: statusCheck.error,
           },
         });
       });
@@ -99,60 +107,68 @@ export const veoVideoPolling = inngest.createFunction(
         });
       });
 
-      throw new Error(`Veo operation failed: ${result.error}`);
+      throw new Error(`Veo operation failed: ${statusCheck.error}`);
     }
 
-    // 성공한 경우 - videoBuffer를 Supabase Storage에 업로드
-    if (!result.videoBuffer) {
-      throw new Error("Veo operation succeeded but no video buffer returned");
-    }
-
-    // Buffer 타입 보장 (Inngest 직렬화 과정에서 plain object로 변환될 수 있음)
-    const videoBuffer = Buffer.isBuffer(result.videoBuffer)
-      ? result.videoBuffer
-      : Buffer.from(result.videoBuffer as any);
-
-    console.log(`✅ Veo video generation completed: ${videoBuffer.length} bytes`);
-
-    // Scene 조회 (projectId, sceneNumber 필요)
-    const scene = await step.run("fetch-scene", async () => {
-      return await prisma.scene.findUnique({
+    // 성공한 경우 - videoBuffer를 다시 가져와서 Supabase Storage에 업로드
+    // ⚠️ checkVeoOperation을 다시 호출하여 videoBuffer 획득
+    // (Step Output 크기 제한을 피하기 위해 분리)
+    const uploadResult = await step.run("fetch-video-and-upload", async () => {
+      // 1. Scene 조회 (projectId, sceneNumber 필요)
+      const scene = await prisma.scene.findUnique({
         where: { id: sceneId },
       });
+
+      if (!scene) {
+        throw new Error(`Scene ${sceneId} not found`);
+      }
+
+      // 2. videoBuffer 다시 가져오기
+      const fullResult = await checkVeoOperation(operationName);
+      if (!fullResult.videoBuffer) {
+        throw new Error("Veo operation succeeded but no video buffer returned");
+      }
+
+      // Buffer 타입 보장
+      const videoBuffer = Buffer.isBuffer(fullResult.videoBuffer)
+        ? fullResult.videoBuffer
+        : Buffer.from(fullResult.videoBuffer as any);
+
+      console.log(`✅ Veo video fetched: ${videoBuffer.length} bytes`);
+
+      // 3. Supabase Storage에 업로드
+      const fileName = `projects/${scene.projectId}/backgrounds/scene_${scene.sceneNumber}_background.mp4`;
+      const { url, path } = await uploadFromBuffer(videoBuffer, fileName, "video/mp4");
+
+      console.log(`📤 Uploaded to Supabase Storage: ${path}`);
+
+      return {
+        videoUrl: url,
+        storagePath: path,
+        projectId: scene.projectId,
+        sceneNumber: scene.sceneNumber,
+      };
     });
 
-    if (!scene) {
-      throw new Error(`Scene ${sceneId} not found`);
-    }
-
-    // Supabase Storage에 업로드
-    const { url: videoUrl, path: storagePath } = await step.run(
-      "upload-video-to-storage",
-      async () => {
-        const fileName = `projects/${scene.projectId}/backgrounds/scene_${scene.sceneNumber}_background.mp4`;
-        return await uploadFromBuffer(videoBuffer, fileName, "video/mp4");
-      }
-    );
-
-    console.log(`📤 Uploaded to Supabase Storage: ${storagePath}`);
+    const { videoUrl, storagePath } = uploadResult;
 
     // Asset 생성
     const asset = await step.run("create-background-video-asset", async () => {
       return await prisma.asset.create({
         data: {
-          projectId: scene.projectId,
+          projectId: uploadResult.projectId,
           sceneId,
           kind: "background_video",
           type: "video",
           url: videoUrl,
           storagePath,
           metadata: {
-            sceneId: scene.id,
-            sceneNumber: scene.sceneNumber,
+            sceneId,
+            sceneNumber: uploadResult.sceneNumber,
             provider: "veo",
             model: "veo-3.0-fast-generate-001",
             operationName,
-            duration: scene.duration,
+            duration: 8, // Veo 3.0 Fast 기본 길이
             cost: 1.5, // 예상 비용 (~$1.5/영상)
             pollingAttempts: currentAttempt,
           },
@@ -195,7 +211,7 @@ export const veoVideoPolling = inngest.createFunction(
       name: "background/completed",
       data: {
         sceneId,
-        projectId: scene.projectId,
+        projectId: uploadResult.projectId,
         assetId: asset.id,
         videoUrl,
       },
