@@ -41,12 +41,8 @@ export const sceneProcessor = inngest.createFunction(
     }
 
     // Step 1: TTS 생성
-    await step.run("generate-tts", async () => {
-      return "TTS generation triggered";
-    });
-
     await step.sendEvent("trigger-tts", {
-      name: "tts/generate.requested",
+      name: "tts/generation.requested", // ttsGenerator가 리스닝하는 정확한 이벤트명
       data: {
         sceneId,
         projectId,
@@ -63,7 +59,7 @@ export const sceneProcessor = inngest.createFunction(
 
     // Step 2: 아바타 생성
     await step.sendEvent("trigger-avatar", {
-      name: "avatar/generate.requested",
+      name: "avatar/generation.requested", // avatarGenerator가 리스닝하는 정확한 이벤트명
       data: {
         sceneId,
         projectId,
@@ -80,7 +76,7 @@ export const sceneProcessor = inngest.createFunction(
 
     // Step 3: 배경 생성
     await step.sendEvent("trigger-background", {
-      name: "background/generate.requested",
+      name: "background/generation.requested", // backgroundGenerator가 리스닝하는 정확한 이벤트명
       data: {
         sceneId,
         projectId,

@@ -54,6 +54,16 @@ export const backgroundGenerator = inngest.createFunction(
         });
       });
 
+      // 배경 완료 이벤트 발송 (Scene Processor가 대기 중)
+      await step.sendEvent("background-completed-gradient", {
+        name: "background/completed",
+        data: {
+          sceneId,
+          projectId: scene.projectId,
+          backgroundType: "gradient",
+        },
+      });
+
       return {
         success: true,
         sceneId,
@@ -61,17 +71,18 @@ export const backgroundGenerator = inngest.createFunction(
       };
     }
 
-    // Medium/High priority: Nano Banana 이미지 생성
-    const description =
+    // Medium/High priority: Nano Banana 이미지 생성 및 업로드 (Inngest output size 제한 회피)
+    // imagePrompt 우선 사용, 없으면 visualDescription, 그것도 없으면 기본값
+    const imagePrompt =
+      scene.imagePrompt ||
       analysis?.visualDescription ||
       `A professional presentation background with ${analysis?.emotion || "neutral"} atmosphere`;
 
-    const imageBuffer = await step.run("generate-nano-image", async () => {
-      return await generateBackgroundImage(description);
-    });
+    const imageUrl = await step.run("generate-and-upload-nano-image", async () => {
+      // 이미지 생성
+      const imageBuffer = await generateBackgroundImage(imagePrompt);
 
-    // 4. Supabase Storage에 업로드
-    const imageUrl = await step.run("upload-background-image", async () => {
+      // 즉시 Supabase Storage에 업로드 (Buffer를 step output으로 반환하지 않음)
       const fileName = `scene_${scene.sceneNumber}_background.png`;
       const storagePath = `projects/${scene.projectId}/backgrounds/${fileName}`;
 
@@ -81,7 +92,7 @@ export const backgroundGenerator = inngest.createFunction(
         : Buffer.from(imageBuffer as unknown as ArrayBuffer);
 
       const { url } = await uploadFromBuffer(buffer, storagePath, "image/png");
-      return url;
+      return url; // URL만 반환 (크기 작음)
     });
 
     // 5. Asset 생성
@@ -98,7 +109,7 @@ export const backgroundGenerator = inngest.createFunction(
             sceneNumber: scene.sceneNumber,
             priority,
             provider: "nano_banana",
-            description,
+            imagePrompt: imagePrompt,
             cost: 0.039,
           },
         },
@@ -118,11 +129,32 @@ export const backgroundGenerator = inngest.createFunction(
 
     // 7. High priority: Veo 영상 생성 트리거
     if (priority === "high") {
+      // videoPrompt 우선 사용, 없으면 기본값
+      const videoPrompt =
+        scene.videoPrompt ||
+        "Slow camera movement, subtle scene changes, 8 seconds duration, cinematic motion";
+
       await step.sendEvent("trigger-veo-generation", {
         name: "veo/generation.requested",
         data: {
           sceneId: scene.id,
           imageAssetId: asset.id,
+          imageUrl,
+          videoPrompt, // videoPrompt 전달
+        },
+      });
+
+      // High priority는 Veo 완료 후에 background/completed 이벤트가 발송됨
+      // (veoVideoPolling.ts에서 처리)
+    } else {
+      // Medium priority: Nano 이미지만 생성 완료
+      // 배경 완료 이벤트 발송 (Scene Processor가 대기 중)
+      await step.sendEvent("background-completed-image", {
+        name: "background/completed",
+        data: {
+          sceneId,
+          projectId: scene.projectId,
+          assetId: asset.id,
           imageUrl,
         },
       });

@@ -15,6 +15,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -25,7 +32,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X } from "lucide-react";
+import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X, Volume2, Video, Image } from "lucide-react";
 import { ProjectStatus } from "@/components/realtime/project-status";
 import { SceneProgress } from "@/components/realtime/scene-progress";
 import { VideoPlayer } from "@/components/video/video-player";
@@ -54,9 +61,17 @@ interface Scene {
   script: string;
   duration: number;
   visualDescription: string;
+  imagePrompt: string | null;
+  videoPrompt: string | null;
   ttsStatus: string;
   avatarStatus: string;
   backgroundStatus: string;
+  backgroundAnalysis?: {
+    priority?: "high" | "medium" | "low";
+    emotion?: string;
+    visualDescription?: string;
+  };
+  assets?: Asset[];
   createdAt: string;
   updatedAt: string;
 }
@@ -70,6 +85,14 @@ interface Asset {
   metadata: unknown;
   createdAt: string;
   updatedAt: string;
+}
+
+interface AvatarDesignSettings {
+  gender?: string;
+  ageRange?: string;
+  style?: string;
+  expression?: string;
+  background?: string;
 }
 
 interface Project {
@@ -106,6 +129,7 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [editedScript, setEditedScript] = useState("");
   const [editedVisualDescription, setEditedVisualDescription] = useState("");
+  const [editedBackgroundPriority, setEditedBackgroundPriority] = useState<"low" | "medium" | "high">("low");
   const [saving, setSaving] = useState(false);
   const [processingScenes, setProcessingScenes] = useState(false);
 
@@ -275,12 +299,15 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
     setEditingSceneId(scene.id);
     setEditedScript(scene.script);
     setEditedVisualDescription(scene.visualDescription || "");
+    const analysis = scene.backgroundAnalysis as { priority?: "high" | "medium" | "low" } | null;
+    setEditedBackgroundPriority(analysis?.priority || "low");
   }
 
   function handleCancelEdit() {
     setEditingSceneId(null);
     setEditedScript("");
     setEditedVisualDescription("");
+    setEditedBackgroundPriority("low");
   }
 
   async function handleSaveEdit(sceneId: string) {
@@ -294,6 +321,7 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
         body: JSON.stringify({
           script: editedScript,
           visualDescription: editedVisualDescription,
+          backgroundPriority: editedBackgroundPriority,
         }),
       });
 
@@ -639,6 +667,8 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
                 );
               }
 
+              const settings = project.avatarDesignSettings as AvatarDesignSettings | null;
+
               return (
                 <div className="flex flex-col items-center gap-4">
                   <img
@@ -646,46 +676,42 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
                     alt="Custom Avatar"
                     className="w-64 h-64 rounded-lg object-cover border-2 border-border"
                   />
-                  {((): React.ReactNode => {
-                    if (!project.avatarDesignSettings) return null;
-                    const settings = project.avatarDesignSettings as { gender?: string; ageRange?: string; style?: string; expression?: string; background?: string };
-                    return (
-                      <div className="grid grid-cols-2 gap-4 w-full max-w-md text-sm">
-                        {settings.gender && (
-                          <div>
-                            <span className="text-muted-foreground">성별:</span>{" "}
-                            <span className="font-medium">
-                              {settings.gender === "male" ? "남성" : "여성"}
-                            </span>
-                          </div>
-                        )}
-                        {settings.ageRange && (
-                          <div>
-                            <span className="text-muted-foreground">나이:</span>{" "}
-                            <span className="font-medium">
-                              {settings.ageRange}
-                            </span>
-                          </div>
-                        )}
-                        {settings.style && (
-                          <div>
-                            <span className="text-muted-foreground">스타일:</span>{" "}
-                            <span className="font-medium">
-                              {settings.style}
-                            </span>
-                          </div>
-                        )}
-                        {settings.expression && (
-                          <div>
-                            <span className="text-muted-foreground">표정:</span>{" "}
-                            <span className="font-medium">
-                              {settings.expression}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  {settings && (
+                    <div className="grid grid-cols-2 gap-4 w-full max-w-md text-sm">
+                      {settings.gender && (
+                        <div>
+                          <span className="text-muted-foreground">성별:</span>{" "}
+                          <span className="font-medium">
+                            {settings.gender === "male" ? "남성" : "여성"}
+                          </span>
+                        </div>
+                      )}
+                      {settings.ageRange && (
+                        <div>
+                          <span className="text-muted-foreground">나이:</span>{" "}
+                          <span className="font-medium">
+                            {settings.ageRange}
+                          </span>
+                        </div>
+                      )}
+                      {settings.style && (
+                        <div>
+                          <span className="text-muted-foreground">스타일:</span>{" "}
+                          <span className="font-medium">
+                            {settings.style}
+                          </span>
+                        </div>
+                      )}
+                      {settings.expression && (
+                        <div>
+                          <span className="text-muted-foreground">표정:</span>{" "}
+                          <span className="font-medium">
+                            {settings.expression}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -744,6 +770,17 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
                         >
                           아바타: {scene.avatarStatus === "completed" ? "완료" : scene.avatarStatus === "processing" ? "진행중" : "대기"}
                         </span>
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            (scene.backgroundAnalysis as { priority?: string })?.priority === "high"
+                              ? "bg-purple-100 text-purple-800"
+                              : (scene.backgroundAnalysis as { priority?: string })?.priority === "medium"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          배경: {(scene.backgroundAnalysis as { priority?: string })?.priority === "high" ? "High" : (scene.backgroundAnalysis as { priority?: string })?.priority === "medium" ? "Medium" : "Low"}
+                        </span>
                         {!isEditing && (
                           <Button
                             variant="ghost"
@@ -783,6 +820,27 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
                             placeholder="배경 설명을 입력하세요..."
                           />
                         </div>
+                        <div>
+                          <Label htmlFor="edit-priority" className="text-xs text-muted-foreground mb-1">
+                            배경 우선순위
+                          </Label>
+                          <Select
+                            value={editedBackgroundPriority}
+                            onValueChange={(value: "low" | "medium" | "high") => setEditedBackgroundPriority(value)}
+                          >
+                            <SelectTrigger id="edit-priority" className="text-sm">
+                              <SelectValue placeholder="우선순위 선택" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="low">Low (그라데이션)</SelectItem>
+                              <SelectItem value="medium">Medium (이미지)</SelectItem>
+                              <SelectItem value="high">High (영상)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Low: FFmpeg 그라데이션 | Medium: Nano Banana 이미지 | High: Veo 3.1 영상
+                          </p>
+                        </div>
                         <div className="flex gap-2 justify-end">
                           <Button
                             variant="ghost"
@@ -807,12 +865,136 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
                     ) : (
                       <>
                         <p className="text-sm leading-relaxed">{scene.script}</p>
-                        {scene.visualDescription && (
-                          <div className="mt-3 pt-3 border-t">
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-medium">배경 설명:</span>{" "}
-                              {scene.visualDescription}
-                            </p>
+
+                        {/* 프롬프트 표시 */}
+                        <div className="mt-4 space-y-3">
+                          {scene.imagePrompt && (
+                            <div>
+                              <h4 className="font-medium text-xs text-muted-foreground mb-1.5">
+                                이미지 프롬프트 (Nano Banana)
+                              </h4>
+                              <p className="text-xs text-gray-600 font-mono bg-gray-50 p-2 rounded border border-gray-200">
+                                {scene.imagePrompt}
+                              </p>
+                            </div>
+                          )}
+
+                          {scene.videoPrompt && (
+                            <div>
+                              <h4 className="font-medium text-xs text-muted-foreground mb-1.5">
+                                영상 프롬프트 (Veo 3.1)
+                              </h4>
+                              <p className="text-xs text-gray-600 font-mono bg-gray-50 p-2 rounded border border-gray-200">
+                                {scene.videoPrompt}
+                              </p>
+                            </div>
+                          )}
+
+                          {scene.visualDescription && (
+                            <div>
+                              <h4 className="font-medium text-xs text-muted-foreground mb-1.5">
+                                배경 설명 (하위 호환성)
+                              </h4>
+                              <p className="text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded border border-gray-200">
+                                {scene.visualDescription}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Asset 미리보기/재생 */}
+                        {scene.assets && scene.assets.length > 0 && (
+                          <div className="mt-4 space-y-3 border-t pt-4">
+                            <h4 className="font-medium text-sm text-muted-foreground">
+                              생성된 자산
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* TTS 오디오 */}
+                              {(() => {
+                                const audioAsset = scene.assets.find((a) => a.kind === "audio");
+                                if (!audioAsset) return null;
+
+                                return (
+                                  <div className="border rounded-lg p-3 bg-muted/30">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Volume2 className="h-4 w-4 text-blue-600" />
+                                      <span className="text-xs font-medium">TTS 오디오</span>
+                                    </div>
+                                    <audio
+                                      controls
+                                      className="w-full h-8"
+                                      src={audioAsset.url}
+                                    >
+                                      브라우저가 오디오를 지원하지 않습니다.
+                                    </audio>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* 아바타 영상 */}
+                              {(() => {
+                                const avatarAsset = scene.assets.find((a) => a.kind === "avatar_video");
+                                if (!avatarAsset) return null;
+
+                                return (
+                                  <div className="border rounded-lg p-3 bg-muted/30">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Video className="h-4 w-4 text-purple-600" />
+                                      <span className="text-xs font-medium">아바타 영상</span>
+                                    </div>
+                                    <video
+                                      controls
+                                      className="w-full rounded border border-border"
+                                      src={avatarAsset.url}
+                                    >
+                                      브라우저가 비디오를 지원하지 않습니다.
+                                    </video>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* 배경 이미지 */}
+                              {(() => {
+                                const bgImageAsset = scene.assets.find((a) => a.kind === "background_image");
+                                if (!bgImageAsset) return null;
+
+                                return (
+                                  <div className="border rounded-lg p-3 bg-muted/30">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Image className="h-4 w-4 text-green-600" />
+                                      <span className="text-xs font-medium">배경 이미지</span>
+                                    </div>
+                                    <img
+                                      src={bgImageAsset.url}
+                                      alt="Background"
+                                      className="w-full rounded border border-border"
+                                    />
+                                  </div>
+                                );
+                              })()}
+
+                              {/* 배경 영상 */}
+                              {(() => {
+                                const bgVideoAsset = scene.assets.find((a) => a.kind === "background_video");
+                                if (!bgVideoAsset) return null;
+
+                                return (
+                                  <div className="border rounded-lg p-3 bg-muted/30">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Film className="h-4 w-4 text-orange-600" />
+                                      <span className="text-xs font-medium">배경 영상</span>
+                                    </div>
+                                    <video
+                                      controls
+                                      className="w-full rounded border border-border"
+                                      src={bgVideoAsset.url}
+                                    >
+                                      브라우저가 비디오를 지원하지 않습니다.
+                                    </video>
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           </div>
                         )}
                       </>

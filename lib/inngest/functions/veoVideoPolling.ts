@@ -9,8 +9,11 @@ export const veoVideoPolling = inngest.createFunction(
   async ({ event, step }) => {
     const { sceneId, operationName, maxAttempts = 120, currentAttempt = 1 } = event.data;
 
-    // 5초 대기
-    await step.sleep("wait-before-check", "5s");
+    // 첫 번째 시도: 더 긴 대기 (operation 생성 전파 대기)
+    // 이후 시도: 5초 대기
+    const waitTime = currentAttempt === 1 ? "30s" : "5s";
+    console.log(`⏳ Attempt ${currentAttempt}/${maxAttempts}: Waiting ${waitTime} before polling...`);
+    await step.sleep("wait-before-check", waitTime);
 
     // Veo LRO 상태 확인
     const operationStatus = await step.run("check-veo-status", async () => {
@@ -96,25 +99,101 @@ export const veoVideoPolling = inngest.createFunction(
         });
       });
 
+      // 배경 완료 이벤트 발송 (Scene Processor가 대기 중)
+      // High priority 경로: Veo 영상 생성 완료
+      await step.sendEvent("background-completed-video", {
+        name: "background/completed",
+        data: {
+          sceneId,
+          projectId: scene.projectId,
+          assetId: asset.id,
+          videoUrl,
+        },
+      });
+
+      console.log(`✅ Veo video polling completed successfully for scene ${sceneId}`);
+
       return {
         success: true,
         sceneId,
         assetId: asset.id,
         videoUrl,
       };
-    } else if (operationStatus.error) {
-      // 실패
-      await step.run("mark-background-failed", async () => {
+    } else if (operationStatus.done && !operationStatus.videoBuffer) {
+      // 🚨 완료되었지만 videoBuffer가 없는 경우
+      console.error(`❌ VEO completed but no videoBuffer!`);
+      console.error(`   Scene ID: ${sceneId}`);
+      console.error(`   Operation: ${operationName}`);
+      console.error(`   Error: ${operationStatus.error || "Unknown - videoBuffer is null"}`);
+      console.error(`   Attempt: ${currentAttempt}/${maxAttempts}`);
+
+      // Scene 상태를 failed로 변경
+      await step.run("mark-background-failed-no-video", async () => {
         await prisma.scene.update({
           where: { id: sceneId },
           data: { backgroundStatus: "failed" },
         });
+
+        // RenderJob도 failed로 변경
+        await prisma.renderJob.updateMany({
+          where: {
+            sceneId,
+            externalId: operationName,
+            provider: "veo",
+          },
+          data: {
+            status: "failed",
+            errorMessage: operationStatus.error || "VEO completed but videoBuffer is null",
+          },
+        });
       });
 
       throw new Error(
-        `Veo operation ${operationName} failed: ${operationStatus.error}`
+        `VEO operation completed but videoBuffer is null: ${operationStatus.error || "Unknown error"}`
       );
-    } else if (currentAttempt < maxAttempts) {
+    } else if (operationStatus.error) {
+      // 실패 (404는 제외 - 아래에서 재시도)
+      // 404가 아닌 실제 에러인 경우만 실패 처리
+      const is404Error = operationStatus.error.includes("404") || operationStatus.error.includes("Not Found");
+
+      if (!is404Error) {
+        // 실제 API 에러 (권한, 할당량, GCS 다운로드 실패 등)
+        console.error(`❌ VEO operation error (non-404):`);
+        console.error(`   Scene ID: ${sceneId}`);
+        console.error(`   Operation: ${operationName}`);
+        console.error(`   Error: ${operationStatus.error}`);
+        console.error(`   Attempt: ${currentAttempt}/${maxAttempts}`);
+
+        await step.run("mark-background-failed", async () => {
+          await prisma.scene.update({
+            where: { id: sceneId },
+            data: { backgroundStatus: "failed" },
+          });
+
+          // RenderJob도 failed로 변경
+          await prisma.renderJob.updateMany({
+            where: {
+              sceneId,
+              externalId: operationName,
+              provider: "veo",
+            },
+            data: {
+              status: "failed",
+              errorMessage: operationStatus.error,
+            },
+          });
+        });
+
+        throw new Error(
+          `Veo operation ${operationName} failed: ${operationStatus.error}`
+        );
+      }
+
+      // 404 에러는 재시도 로직으로 넘어감 (operation이 아직 전파되지 않았을 가능성)
+      console.log(`⚠️ 404 error on attempt ${currentAttempt}/${maxAttempts}, will retry...`);
+    }
+
+    if (currentAttempt < maxAttempts) {
       // 아직 처리 중: 재시도
       await step.sendEvent("retry-veo-polling", {
         name: "veo/polling.requested",
@@ -134,10 +213,27 @@ export const veoVideoPolling = inngest.createFunction(
       };
     } else {
       // 최대 시도 횟수 초과
+      console.error(`❌ VEO polling timeout after ${maxAttempts} attempts`);
+      console.error(`   Scene ID: ${sceneId}`);
+      console.error(`   Operation: ${operationName}`);
+
       await step.run("mark-background-timeout", async () => {
         await prisma.scene.update({
           where: { id: sceneId },
           data: { backgroundStatus: "failed" },
+        });
+
+        // RenderJob도 failed로 변경
+        await prisma.renderJob.updateMany({
+          where: {
+            sceneId,
+            externalId: operationName,
+            provider: "veo",
+          },
+          data: {
+            status: "failed",
+            errorMessage: `Polling timeout after ${maxAttempts} attempts (10+ minutes)`,
+          },
         });
       });
 

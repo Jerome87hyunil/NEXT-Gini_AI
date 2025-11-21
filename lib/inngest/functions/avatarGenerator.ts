@@ -71,7 +71,18 @@ export const avatarGenerator = inngest.createFunction(
 
     // 4. D-ID Talk 생성
     const talkId = await step.run("create-did-talk", async () => {
-      const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/did`;
+      // 로컬 환경에서는 웹훅 비활성화 (D-ID는 HTTPS만 허용)
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+      const webhookUrl = appUrl.startsWith("https://")
+        ? `${appUrl}/api/webhooks/did`
+        : undefined;
+
+      console.log(
+        webhookUrl
+          ? `✅ Using webhook: ${webhookUrl}`
+          : "⚠️  Webhook disabled (local dev - using polling only)"
+      );
+
       return await createTalk(avatarImageUrl, audioUrl, webhookUrl);
     });
 

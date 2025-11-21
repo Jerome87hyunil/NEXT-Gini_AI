@@ -22,25 +22,31 @@ export async function createTalk(
   audioUrl: string,
   webhookUrl?: string
 ): Promise<string> {
+  const payload: Record<string, unknown> = {
+    source_url: avatarImageUrl,
+    script: {
+      type: "audio",
+      audio_url: audioUrl,
+    },
+    config: {
+      fluent: true,
+      pad_audio: 0,
+      stitch: true,
+    },
+  };
+
+  // 웹훅 URL이 있을 때만 추가 (HTTPS만 허용됨)
+  if (webhookUrl) {
+    payload.webhook = webhookUrl;
+  }
+
   const response = await fetch(`${BASE_URL}/talks`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Basic ${API_KEY}`,
     },
-    body: JSON.stringify({
-      source_url: avatarImageUrl,
-      script: {
-        type: "audio",
-        audio_url: audioUrl,
-      },
-      config: {
-        fluent: true,
-        pad_audio: 0,
-        stitch: true,
-      },
-      webhook: webhookUrl,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {

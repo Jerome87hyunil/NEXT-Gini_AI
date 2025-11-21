@@ -89,7 +89,10 @@ PDF 문서를 분석하여 ${project.duration}초 분량의 발표 대본을 생
       "sceneNumber": 1,
       "script": "씬 1 대본 내용",
       "duration": 8,
-      "visualDescription": "화면에 표시될 내용 설명"
+      "visualDescription": "화면에 표시될 내용 설명",
+      "imagePrompt": "Nano Banana 이미지 생성용 프롬프트 (영문, 16:9 비율, 포토리얼리스틱)",
+      "videoPrompt": "Veo 3.1 영상 생성용 프롬프트 (영문, 카메라 움직임 포함, 8초 길이)",
+      "priority": "high 또는 medium 또는 low"
     },
     ...
   ]
@@ -98,7 +101,17 @@ PDF 문서를 분석하여 ${project.duration}초 분량의 발표 대본을 생
 규칙:
 - 각 씬의 대본은 자연스럽고 발표하기 적합해야 합니다
 - 각 씬은 정확히 8초 분량의 대본이어야 합니다 (Veo 3.1 영상 길이에 맞춤)
-- visualDescription은 배경 이미지 및 영상 생성에 사용됩니다
+- visualDescription은 배경 이미지 및 영상 생성에 사용됩니다 (한국어)
+- imagePrompt는 Nano Banana 이미지 생성 모델용 프롬프트입니다 (영문 필수)
+  * 16:9 비율, 포토리얼리스틱 스타일
+  * 구체적인 조명, 색상, 구도, 질감 포함
+  * 예: "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting"
+- videoPrompt는 Veo 3.1 영상 생성 모델용 프롬프트입니다 (영문 필수)
+  * 카메라 움직임 (slow pan, gentle zoom, static shot)
+  * 동적 요소 (subtle movement, light changes)
+  * 8초 길이에 적합한 변화
+  * 예: "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 8 seconds duration"
+- priority는 배경 중요도입니다 (high: Veo 영상, medium: Nano 이미지, low: 그라데이션)
 - 한국어로 작성하세요
 `.trim();
 
@@ -134,7 +147,17 @@ PDF 문서를 분석하여 ${project.duration}초 분량의 발표 대본을 생
 
     // Scene 레코드 생성
     const scenes = await Promise.all(
-      scriptData.scenes.map(async (scene: { sceneNumber?: number; script?: string; text?: string; duration?: number; visualDescription?: string; priority?: string; emotion?: string }, index: number) => {
+      scriptData.scenes.map(async (scene: {
+        sceneNumber?: number;
+        script?: string;
+        text?: string;
+        duration?: number;
+        visualDescription?: string;
+        imagePrompt?: string;
+        videoPrompt?: string;
+        priority?: string;
+        emotion?: string
+      }, index: number) => {
         return prisma.scene.create({
           data: {
             projectId,
@@ -144,10 +167,15 @@ PDF 문서를 분석하여 ${project.duration}초 분량의 발표 대본을 생
             duration: scene.duration || 8,
             durationSeconds: scene.duration || 8,
             visualDescription: scene.visualDescription || "",
+            imagePrompt: scene.imagePrompt || null,
+            videoPrompt: scene.videoPrompt || null,
             ttsStatus: "pending",
             avatarStatus: "pending",
             backgroundStatus: "pending",
-            backgroundAnalysis: {},
+            backgroundAnalysis: {
+              priority: scene.priority || "medium",
+              emotion: scene.emotion || "neutral",
+            },
             metadata: {},
           },
         });

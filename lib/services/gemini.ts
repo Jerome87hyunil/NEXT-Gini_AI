@@ -63,7 +63,16 @@ export async function generateScript(
 2. 씬 구성: 8초씩 나눠서 총 ${duration / 8}개 씬 (Veo 3.1 영상 길이에 맞춤)
 3. 각 씬마다 다음 정보를 포함:
    - 대본 (script): 아바타가 말할 내용 (정확히 8초 분량)
-   - 시각적 설명 (visualDescription): 배경에 표시할 내용 설명. 구체적인 조명, 질감, 카메라 앵글 등을 포함하여 포토리얼리스틱한 이미지를 생성할 수 있도록 상세히 묘사하세요. (예: "Cinematic lighting, 8k resolution, highly detailed texture")
+   - 시각적 설명 (visualDescription): 배경에 표시할 내용 설명 (하위 호환성용)
+   - 이미지 프롬프트 (imagePrompt): Nano Banana 이미지 생성 모델용 프롬프트
+     * 16:9 비율, 포토리얼리스틱 스타일
+     * 구체적인 조명, 색상, 구도, 질감 포함
+     * 예: "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting, professional photography"
+   - 영상 프롬프트 (videoPrompt): Veo 3.1 영상 생성 모델용 프롬프트
+     * 카메라 움직임 (slow pan, gentle zoom, static shot)
+     * 동적 요소 (subtle movement, light changes)
+     * 8초 길이에 적합한 변화
+     * 예: "Slow camera pan from left to right across the office space, subtle light movement through windows, smooth transition, 8 seconds duration, cinematic motion"
    - 우선순위 (priority): "high" (중요), "medium" (보통), "low" (덜 중요)
 
 응답 형식 (JSON):
@@ -72,7 +81,9 @@ export async function generateScript(
     {
       "sceneNumber": 1,
       "script": "안녕하세요...",
-      "visualDescription": "제목 슬라이드 배경",
+      "visualDescription": "현대적인 사무실 배경",
+      "imagePrompt": "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting",
+      "videoPrompt": "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 8 seconds duration",
       "priority": "high"
     }
   ]
@@ -99,13 +110,26 @@ export async function generateScript(
   const response = result.response;
   const text = response.candidates?.[0].content.parts[0].text || "";
 
+  // 디버깅: Gemini 원시 응답 확인
+  console.log("🤖 Gemini Raw Response:");
+  console.log("=".repeat(80));
+  console.log(text);
+  console.log("=".repeat(80));
+
   // JSON 파싱
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
+    console.error("❌ Failed to find JSON in Gemini response");
     throw new Error("Failed to parse Gemini response");
   }
 
-  return JSON.parse(jsonMatch[0]);
+  const parsedJson = JSON.parse(jsonMatch[0]);
+
+  // 디버깅: 파싱된 JSON 확인
+  console.log("📦 Parsed JSON:");
+  console.log(JSON.stringify(parsedJson, null, 2));
+
+  return parsedJson;
 }
 
 /**
@@ -124,9 +148,10 @@ export async function generateAvatarDesign(settings: {
   // 프롬프트 생성
   const prompt = buildAvatarPrompt(settings);
 
-  // Nano Banana 모델 사용 (커스텀 아바타 이미지 생성)
+  // Gemini 2.5 Flash Image 모델 사용 (커스텀 아바타 이미지 생성)
+  // 참고: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash-image
   const model = vertexAI.getGenerativeModel({
-    model: "nanobana-001", // Nano Banana 모델
+    model: "gemini-2.5-flash-image", // Gemini 2.5 Flash Image 모델
   });
 
   const result = await model.generateContent({
@@ -213,12 +238,123 @@ export async function generateBackgroundImage(
  * @returns Operation 정보
  */
 export async function generateVeoVideo(
-  _imageUrl: string,
-  _prompt: string
+  imageUrl: string,
+  prompt: string
 ): Promise<{ name: string }> {
-  // TODO: Veo 3.1 API 사용
-  // 현재는 placeholder
-  throw new Error("Veo API not implemented yet");
+  const { GoogleAuth } = await import("google-auth-library");
+
+  // Google Auth 클라이언트 생성
+  const auth = new GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    ...(credentials && { credentials }),
+  });
+
+  const client = await auth.getClient();
+  const accessTokenResponse = await client.getAccessToken();
+
+  if (!accessTokenResponse.token) {
+    throw new Error("Failed to obtain access token");
+  }
+
+  console.log(`📸 Downloading image from: ${imageUrl}`);
+
+  // 이미지 다운로드 및 Base64 인코딩
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    console.error(`❌ Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
+    console.error(`   Image URL: ${imageUrl}`);
+    throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
+  }
+
+  const imageBuffer = await imageResponse.arrayBuffer();
+  const imageBase64 = Buffer.from(imageBuffer).toString("base64");
+  console.log(`✅ Image downloaded: ${imageBuffer.byteLength} bytes → ${imageBase64.length} base64 chars`);
+
+  // Veo 3.1 API 엔드포인트 (predictLongRunning 사용)
+  const endpoint = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/veo-3.1-generate-preview:predictLongRunning`;
+
+  // 영화 품질 프롬프트 강화
+  const cinematicPrompt = enhanceCinematicPrompt(prompt);
+
+  console.log(`🎬 Calling Veo 3.1 API:`);
+  console.log(`   Endpoint: ${endpoint}`);
+  console.log(`   Prompt: ${cinematicPrompt.substring(0, 200)}...`);
+
+  // API 요청 (Veo 형식)
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessTokenResponse.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      instances: [
+        {
+          prompt: cinematicPrompt,
+          image: {
+            bytesBase64Encoded: imageBase64,
+            mimeType: "image/png",
+          },
+        },
+      ],
+      parameters: {
+        aspectRatio: "16:9",
+        resolution: "720p",
+        sampleCount: 1,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("❌ Veo API request failed:");
+    console.error(`   Status: ${response.status} ${response.statusText}`);
+    console.error(`   Endpoint: ${endpoint}`);
+    console.error(`   Response:`, errorText.substring(0, 1000));
+    throw new Error(`Veo API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const result = await response.json();
+
+  // 디버깅: Veo API 전체 응답 확인
+  console.log(`✅ Veo video generation API response:`);
+  console.log(JSON.stringify(result, null, 2));
+
+  // LRO operation name 추출
+  const operationName = result.name;
+  if (!operationName) {
+    console.error("❌ No operation name in Veo API response");
+    console.error("   Full response:", JSON.stringify(result, null, 2));
+    throw new Error("No operation name in Veo API response");
+  }
+
+  console.log(`✅ Veo video generation started`);
+  console.log(`   Operation name: ${operationName}`);
+  console.log(`   Full response:`, JSON.stringify(result, null, 2).substring(0, 500));
+
+  return { name: operationName };
+}
+
+/**
+ * 영화 품질 프롬프트 강화
+ */
+function enhanceCinematicPrompt(prompt: string): string {
+  // 이미 cinematic 키워드가 있으면 그대로 반환
+  if (prompt.toLowerCase().includes("cinematic")) {
+    return prompt;
+  }
+
+  // 영화 품질 향상 키워드 추가
+  const cinematicEnhancements = [
+    "cinematic quality",
+    "professional cinematography",
+    "smooth camera movement",
+    "dramatic lighting",
+    "film-grade color grading",
+    "8-second duration",
+  ];
+
+  return `${prompt}, ${cinematicEnhancements.join(", ")}`;
 }
 
 /**
@@ -232,11 +368,157 @@ export async function checkVeoOperation(operationName: string): Promise<{
   videoBuffer?: Buffer;
   error?: string;
 }> {
-  // TODO: Veo LRO 폴링 구현
-  console.warn(`Veo polling not implemented for: ${operationName}`);
+  const { GoogleAuth } = await import("google-auth-library");
+  const { Storage } = await import("@google-cloud/storage");
 
-  // Placeholder: 항상 완료되지 않음으로 반환
-  return {
-    done: false,
-  };
+  // Google Auth 클라이언트 생성
+  const auth = new GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    ...(credentials && { credentials }),
+  });
+
+  const client = await auth.getClient();
+  const accessTokenResponse = await client.getAccessToken();
+
+  if (!accessTokenResponse.token) {
+    throw new Error("Failed to obtain access token");
+  }
+
+  // operationName에서 location 동적 추출
+  // 예: "projects/.../locations/us-central1/..." → "us-central1"
+  const locationMatch = operationName.match(/\/locations\/([^\/]+)\//);
+  const operationLocation = locationMatch ? locationMatch[1] : LOCATION;
+
+  // LRO 상태 확인 엔드포인트
+  // Veo preview API는 operation name을 그대로 사용
+  // operationName 형식: "projects/{project}/locations/{location}/publishers/google/models/{model}/operations/{operation}"
+  const endpoint = `https://${operationLocation}-aiplatform.googleapis.com/v1/${operationName}`;
+
+  console.log(`🔍 Veo LRO polling:`);
+  console.log(`   Operation location: ${operationLocation}`);
+  console.log(`   Endpoint: ${endpoint}`);
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessTokenResponse.token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("❌ Veo LRO polling failed:");
+    console.error(`   Status: ${response.status} ${response.statusText}`);
+    console.error(`   Operation: ${operationName}`);
+    console.error(`   Extracted location: ${operationLocation}`);
+    console.error(`   Default location (env): ${LOCATION}`);
+    console.error(`   Endpoint: ${endpoint}`);
+    console.error(`   Response:`, errorText.substring(0, 500));
+
+    // 404 에러는 eventual consistency - 재시도 계속
+    if (response.status === 404) {
+      console.log("⏳ 404 - Operation not yet available (eventual consistency)");
+      console.log(`   Operation will be retried by polling function`);
+      console.log(`   Location: ${operationLocation}`);
+      return {
+        done: false,  // ← FIXED: 재시도 계속
+      };
+    }
+
+    // 다른 HTTP 에러 (권한, 할당량 등)는 실패로 처리
+    console.error("🚨 Non-404 error - marking as failed");
+    return {
+      done: true,
+      error: `LRO polling failed: ${response.status} ${response.statusText}`,
+    };
+  }
+
+  const operation = await response.json();
+
+  // 작업이 아직 진행 중인 경우
+  if (!operation.done) {
+    console.log(`⏳ Veo operation in progress: ${operationName}`);
+    return {
+      done: false,
+    };
+  }
+
+  // 에러가 발생한 경우
+  if (operation.error) {
+    console.error("Veo operation failed:", operation.error);
+    return {
+      done: true,
+      error: operation.error.message || "Veo operation failed",
+    };
+  }
+
+  // 성공한 경우 - 비디오 파일 다운로드
+  try {
+    // 🔍 전체 operation response 로깅 (디버깅용)
+    console.log(`📋 Full operation response:`, JSON.stringify(operation, null, 2));
+
+    // Veo API 응답 형식: operation.response.videos[]
+    const videos = operation.response?.videos;
+    if (!videos || videos.length === 0) {
+      console.error(`❌ No videos in operation response!`);
+      console.error(`   Operation name: ${operationName}`);
+      console.error(`   Response structure:`, JSON.stringify(operation.response, null, 2));
+      throw new Error("No generated videos in operation response");
+    }
+
+    const videoFile = videos[0];
+    const gcsUri = videoFile.gcsUri;
+
+    if (!gcsUri) {
+      console.error(`❌ No GCS URI in video file!`);
+      console.error(`   Video file structure:`, JSON.stringify(videoFile, null, 2));
+      throw new Error("No GCS URI in operation response");
+    }
+
+    console.log(`📹 Downloading Veo video from GCS: ${gcsUri}`);
+
+    // GCS URI 파싱: gs://bucket-name/path/to/file.mp4
+    const match = gcsUri.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+    if (!match) {
+      console.error(`❌ Invalid GCS URI format: ${gcsUri}`);
+      throw new Error(`Invalid GCS URI format: ${gcsUri}`);
+    }
+
+    const [, bucketName, filePath] = match;
+
+    console.log(`📦 GCS download details:`);
+    console.log(`   Bucket: ${bucketName}`);
+    console.log(`   File path: ${filePath}`);
+
+    // Cloud Storage 클라이언트로 파일 다운로드
+    const storage = new Storage({
+      ...(credentials && { credentials }),
+    });
+
+    const bucket = storage.bucket(bucketName);
+    const file = bucket.file(filePath);
+
+    const [videoBuffer] = await file.download();
+
+    console.log(`✅ Veo video downloaded: ${videoBuffer.length} bytes`);
+
+    return {
+      done: true,
+      videoBuffer,
+    };
+  } catch (error) {
+    console.error("❌ Failed to download Veo video:");
+    console.error(`   Operation: ${operationName}`);
+    console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+    console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`);
+
+    if (error instanceof Error && error.stack) {
+      console.error(`   Stack trace:`, error.stack);
+    }
+
+    return {
+      done: true,
+      error: error instanceof Error ? error.message : "Failed to download video",
+    };
+  }
 }

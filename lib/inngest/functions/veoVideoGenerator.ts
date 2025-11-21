@@ -6,7 +6,7 @@ export const veoVideoGenerator = inngest.createFunction(
   { id: "veo-video-generator", retries: 2, concurrency: [{ limit: 2 }] },
   { event: "veo/generation.requested" },
   async ({ event, step }) => {
-    const { sceneId, imageAssetId, imageUrl } = event.data;
+    const { sceneId, imageAssetId, imageUrl, videoPrompt } = event.data;
 
     // 1. 씬 조회
     const scene = await step.run("fetch-scene", async () => {
@@ -21,16 +21,18 @@ export const veoVideoGenerator = inngest.createFunction(
       return scene;
     });
 
-    const analysis = scene.backgroundAnalysis as {
-      visualDescription?: string;
-      emotion?: string;
-    };
-
     // 2. Veo 영상 생성 시작
     const operation = await step.run("start-veo-generation", async () => {
+      // videoPrompt 우선 사용, 없으면 scene.videoPrompt, 그것도 없으면 기본값
       const prompt =
-        analysis?.visualDescription ||
-        `Professional presentation background with ${analysis?.emotion || "neutral"} atmosphere`;
+        videoPrompt ||
+        scene.videoPrompt ||
+        "Slow camera movement, subtle scene changes, 8 seconds duration, cinematic motion";
+
+      console.log(`🎬 Veo generation starting:`);
+      console.log(`   Scene ID: ${sceneId}`);
+      console.log(`   Image URL: ${imageUrl}`);
+      console.log(`   Video Prompt: ${prompt}`);
 
       return await generateVeoVideo(imageUrl, prompt);
     });

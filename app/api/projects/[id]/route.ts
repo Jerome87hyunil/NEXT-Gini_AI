@@ -53,6 +53,11 @@ export async function GET(request: Request, { params }: { params: Params }) {
         },
         scenes: {
           orderBy: { position: "asc" },
+          include: {
+            assets: {
+              orderBy: { createdAt: "desc" },
+            },
+          },
         },
         assets: {
           orderBy: { createdAt: "desc" },

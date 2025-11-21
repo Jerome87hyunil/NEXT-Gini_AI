@@ -10,6 +10,13 @@ interface SceneProgressProps {
   projectId: string;
 }
 
+interface Asset {
+  id: string;
+  kind: "scene" | "project";
+  type: "audio" | "avatar" | "background_image" | "background_video" | "avatar_design" | "final_video";
+  url: string;
+}
+
 interface SceneStatus {
   id: string;
   sceneNumber: number;
@@ -17,6 +24,7 @@ interface SceneStatus {
   ttsStatus: string;
   avatarStatus: string;
   backgroundStatus: string;
+  assets: Asset[];
 }
 
 export function SceneProgress({ projectId }: SceneProgressProps) {
@@ -26,22 +34,22 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
   useEffect(() => {
     const supabase = createClient();
 
-    // 초기 씬 목록 로드
+    // 초기 씬 목록 로드 (API 호출로 Asset 포함)
     const loadScenes = async () => {
-      const { data, error } = await supabase
-        .from("Scene")
-        .select("id, sceneNumber, text, ttsStatus, avatarStatus, backgroundStatus")
-        .eq("projectId", projectId)
-        .order("sceneNumber", { ascending: true });
-
-      if (!error && data) {
-        setScenes(data);
+      try {
+        const response = await fetch(`/api/projects/${projectId}/scenes`);
+        if (response.ok) {
+          const { scenes: scenesData } = await response.json();
+          setScenes(scenesData);
+        }
+      } catch (error) {
+        console.error("Failed to load scenes:", error);
       }
     };
 
     loadScenes();
 
-    // Realtime 구독
+    // Realtime 구독 - Scene 업데이트
     const channel = supabase
       .channel(`scenes:${projectId}`)
       .on(
@@ -64,7 +72,34 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
               )
             );
           } else if (payload.eventType === "INSERT") {
-            setScenes((prev) => [...prev, payload.new as SceneStatus]);
+            // 새 씬 추가 시 assets 배열 초기화
+            setScenes((prev) => [...prev, { ...payload.new, assets: [] } as SceneStatus]);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "Asset",
+        },
+        (payload) => {
+          console.log("Asset created:", payload);
+          const newAsset = payload.new;
+
+          // 해당 씬에 자산 추가
+          if (newAsset.sceneId) {
+            setScenes((prev) =>
+              prev.map((scene) =>
+                scene.id === newAsset.sceneId
+                  ? {
+                      ...scene,
+                      assets: [...scene.assets, newAsset as Asset],
+                    }
+                  : scene
+              )
+            );
           }
         }
       )
@@ -92,18 +127,44 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
     return <Circle className="h-4 w-4 text-gray-300" />;
   };
 
-  const getStatusBadge = (status: string) => {
-    const config: Record<
-      string,
-      { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
-    > = {
-      pending: { label: "대기", variant: "outline" },
-      generating: { label: "진행 중", variant: "default" },
-      completed: { label: "완료", variant: "secondary" },
-      failed: { label: "실패", variant: "destructive" },
+  const getStatusBadge = (status: string, type: "tts" | "avatar" | "background") => {
+    // 타입별로 더 상세한 상태 메시지 표시
+    const detailedLabels: Record<string, Record<string, string>> = {
+      tts: {
+        pending: "대기 중",
+        processing: "음성 생성 중...",
+        completed: "완료",
+        failed: "실패",
+      },
+      avatar: {
+        pending: "대기 중",
+        processing: "아바타 렌더링 중...",
+        polling: "영상 처리 중...",
+        completed: "완료",
+        failed: "실패",
+      },
+      background: {
+        pending: "대기 중",
+        processing: "이미지 생성 중...",
+        generating: "Veo 영상 생성 중...",
+        polling: "영상 폴링 중...",
+        completed: "완료",
+        failed: "실패",
+      },
     };
 
-    const { label, variant } = config[status] || config.pending;
+    const variantMap: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      pending: "outline",
+      processing: "default",
+      generating: "default",
+      polling: "default",
+      completed: "secondary",
+      failed: "destructive",
+    };
+
+    const label = detailedLabels[type][status] || status;
+    const variant = variantMap[status] || "outline";
+
     return <Badge variant={variant} className="text-xs">{label}</Badge>;
   };
 
@@ -170,7 +231,7 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
                     {getStatusIcon(scene.ttsStatus)}
                     <span>TTS</span>
                   </div>
-                  {getStatusBadge(scene.ttsStatus)}
+                  {getStatusBadge(scene.ttsStatus, "tts")}
                 </div>
 
                 <div className="space-y-1">
@@ -178,7 +239,7 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
                     {getStatusIcon(scene.avatarStatus)}
                     <span>아바타</span>
                   </div>
-                  {getStatusBadge(scene.avatarStatus)}
+                  {getStatusBadge(scene.avatarStatus, "avatar")}
                 </div>
 
                 <div className="space-y-1">
@@ -186,9 +247,62 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
                     {getStatusIcon(scene.backgroundStatus)}
                     <span>배경</span>
                   </div>
-                  {getStatusBadge(scene.backgroundStatus)}
+                  {getStatusBadge(scene.backgroundStatus, "background")}
                 </div>
               </div>
+
+              {/* 완료된 자산 미리보기 */}
+              {scene.assets.length > 0 && (
+                <div className="mt-3 pt-3 border-t space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">완료된 결과물</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* TTS 오디오 */}
+                    {scene.assets.find((a) => a.type === "audio") && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">오디오</p>
+                        <audio
+                          controls
+                          className="w-full h-8"
+                          src={scene.assets.find((a) => a.type === "audio")?.url}
+                        />
+                      </div>
+                    )}
+
+                    {/* 아바타 영상 */}
+                    {scene.assets.find((a) => a.type === "avatar") && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">아바타</p>
+                        <video
+                          controls
+                          className="w-full h-20 rounded object-cover bg-black"
+                          src={scene.assets.find((a) => a.type === "avatar")?.url}
+                        />
+                      </div>
+                    )}
+
+                    {/* 배경 이미지/영상 */}
+                    {(scene.assets.find((a) => a.type === "background_image") ||
+                      scene.assets.find((a) => a.type === "background_video")) && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">배경</p>
+                        {scene.assets.find((a) => a.type === "background_video") ? (
+                          <video
+                            controls
+                            className="w-full h-20 rounded object-cover bg-black"
+                            src={scene.assets.find((a) => a.type === "background_video")?.url}
+                          />
+                        ) : (
+                          <img
+                            alt="배경 이미지"
+                            className="w-full h-20 rounded object-cover"
+                            src={scene.assets.find((a) => a.type === "background_image")?.url}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

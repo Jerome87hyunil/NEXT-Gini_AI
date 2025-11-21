@@ -86,6 +86,17 @@ export const avatarPolling = inngest.createFunction(
         });
       });
 
+      // 아바타 완료 이벤트 발송 (Scene Processor가 대기 중)
+      await step.sendEvent("avatar-completed", {
+        name: "avatar/completed",
+        data: {
+          sceneId,
+          projectId: scene.projectId,
+          assetId: asset.id,
+          videoUrl,
+        },
+      });
+
       return {
         success: true,
         sceneId,

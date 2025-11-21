@@ -9,6 +9,7 @@ const updateSceneSchema = z.object({
   script: z.string().min(1, "스크립트는 비워둘 수 없습니다.").max(5000, "스크립트는 최대 5000자입니다.").optional(),
   visualDescription: z.string().max(1000, "시각적 설명은 최대 1000자입니다.").optional(),
   duration: z.number().min(1).max(60).optional(),
+  backgroundPriority: z.enum(["low", "medium", "high"]).optional(),
 });
 
 type Params = Promise<{ id: string; sceneId: string }>;
@@ -56,13 +57,23 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     const body = await request.json();
     const validated = updateSceneSchema.parse(body);
 
+    // backgroundPriority 분리 (JSONB 필드에 저장)
+    const { backgroundPriority, ...sceneData } = validated;
+
     // Scene 업데이트
     const updatedScene = await prisma.scene.update({
       where: { id: sceneId },
       data: {
-        ...validated,
+        ...sceneData,
         // duration이 변경되면 durationSeconds도 동기화
         ...(validated.duration && { durationSeconds: validated.duration }),
+        // backgroundPriority가 있으면 backgroundAnalysis.priority 업데이트
+        ...(backgroundPriority && {
+          backgroundAnalysis: {
+            ...(existingScene.backgroundAnalysis as object),
+            priority: backgroundPriority,
+          },
+        }),
       },
     });
 

@@ -70,20 +70,47 @@ export const avatarDesignGenerator = inngest.createFunction(
       background: string;
     };
 
-    // 3. Imagen API로 아바타 이미지 생성 (Quota 초과 시 프리셋 폴백)
-    const imageBuffer = await step.run("generate-avatar-image", async () => {
+    // 3. Imagen API로 아바타 이미지 생성 및 업로드 (Inngest output size 제한 회피)
+    const imageUrl = await step.run("generate-and-upload-avatar-image", async () => {
       try {
-        return await generateAvatarDesign(settings);
+        // 이미지 생성
+        const imageBuffer = await generateAvatarDesign(settings);
+
+        // 즉시 Supabase Storage에 업로드 (Buffer를 step output으로 반환하지 않음)
+        const fileName = `avatar_design.png`;
+        const storagePath = `projects/${projectId}/avatars/${fileName}`;
+
+        // API 응답이 JSON 직렬화된 Buffer일 수 있으므로 변환
+        const buffer = Buffer.isBuffer(imageBuffer)
+          ? imageBuffer
+          : Buffer.from(imageBuffer as unknown as ArrayBuffer);
+
+        const { url } = await uploadFromBuffer(buffer, storagePath, "image/png");
+        return url; // URL만 반환 (크기 작음)
       } catch (error: any) {
         console.error("Avatar design generation failed:", error);
 
-        // Quota 초과 에러 감지
-        if (
+        // 폴백 대상 에러 판단
+        const shouldFallback =
           error.message?.includes("Quota exceeded") ||
           error.message?.includes("RESOURCE_EXHAUSTED") ||
-          error.code === 429
-        ) {
-          console.warn("Quota exceeded, falling back to preset avatar");
+          error.message?.includes("not found") ||
+          error.message?.includes("NOT_FOUND") ||
+          error.code === 404 ||
+          error.code === 429 ||
+          error.status === "NOT_FOUND";
+
+        if (shouldFallback) {
+          const errorReason =
+            error.code === 404 || error.status === "NOT_FOUND"
+              ? "Model not found"
+              : error.code === 429
+              ? "Quota exceeded"
+              : "API error";
+
+          console.warn(
+            `${errorReason}, falling back to preset avatar for project ${projectId}`
+          );
 
           // 프로젝트 상태를 failed로 업데이트하고 에러 정보 저장
           await prisma.project.update({
@@ -91,7 +118,7 @@ export const avatarDesignGenerator = inngest.createFunction(
             data: {
               avatarDesignStatus: "failed",
               metadata: {
-                avatarDesignError: "Quota exceeded",
+                avatarDesignError: errorReason,
                 avatarDesignErrorDetails: error.message,
                 fallbackToPreset: true,
                 errorTimestamp: new Date().toISOString(),
@@ -102,27 +129,13 @@ export const avatarDesignGenerator = inngest.createFunction(
           // 워크플로우를 중단하지 않고 프리셋 아바타 사용하도록 설정
           // 나머지 씬 처리는 프리셋 아바타로 진행됨
           throw new Error(
-            "Avatar design generation failed due to quota exceeded. Project will use preset avatar."
+            `Avatar design generation failed: ${errorReason}. Project will use preset avatar.`
           );
         }
 
-        // 다른 에러는 재시도 가능하도록 다시 throw
+        // 일시적 네트워크 에러 등은 재시도 가능하도록 다시 throw
         throw error;
       }
-    });
-
-    // 4. Supabase Storage에 업로드
-    const imageUrl = await step.run("upload-avatar-image", async () => {
-      const fileName = `avatar_design.png`;
-      const storagePath = `projects/${projectId}/avatars/${fileName}`;
-
-      // API 응답이 JSON 직렬화된 Buffer일 수 있으므로 변환
-      const buffer = Buffer.isBuffer(imageBuffer)
-        ? imageBuffer
-        : Buffer.from(imageBuffer as unknown as ArrayBuffer);
-
-      const { url } = await uploadFromBuffer(buffer, storagePath, "image/png");
-      return url;
     });
 
     // 5. Asset 생성

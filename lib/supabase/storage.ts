@@ -10,6 +10,40 @@ import { createServiceClient } from "./server";
 const ASSETS_BUCKET = "assets";
 
 /**
+ * 파일 경로 정규화 (한글 및 특수문자 처리)
+ *
+ * @param path - 원본 경로
+ * @returns 정규화된 경로 (한글은 영문으로 변환)
+ */
+function normalizePath(path: string): string {
+  // 경로를 슬래시로 분리
+  const parts = path.split("/");
+
+  // 각 부분을 정규화 (파일명만 인코딩, 디렉토리는 유지)
+  const normalized = parts.map((part, index) => {
+    // 마지막 부분(파일명)만 처리
+    if (index === parts.length - 1) {
+      // 파일명과 확장자 분리
+      const lastDotIndex = part.lastIndexOf(".");
+      if (lastDotIndex === -1) return part;
+
+      const name = part.substring(0, lastDotIndex);
+      const ext = part.substring(lastDotIndex);
+
+      // 한글 및 특수문자를 타임스탬프로 대체
+      const safeName = /[^\w\-.]/.test(name)
+        ? `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+        : name;
+
+      return `${safeName}${ext}`;
+    }
+    return part;
+  });
+
+  return normalized.join("/");
+}
+
+/**
  * 파일 업로드
  *
  * @param file - File 객체
@@ -22,9 +56,12 @@ export async function uploadFile(
 ): Promise<{ url: string; path: string }> {
   const supabase = createServiceClient();
 
+  // 한글 및 특수문자가 포함된 경로 정규화
+  const normalizedPath = normalizePath(path);
+
   const { data, error } = await supabase.storage
     .from(ASSETS_BUCKET)
-    .upload(path, file, {
+    .upload(normalizedPath, file, {
       cacheControl: "3600",
       upsert: true, // 같은 경로에 파일이 있으면 덮어쓰기
     });
@@ -58,9 +95,12 @@ export async function uploadFromBuffer(
 ): Promise<{ url: string; path: string }> {
   const supabase = createServiceClient();
 
+  // 한글 및 특수문자가 포함된 경로 정규화
+  const normalizedPath = normalizePath(path);
+
   const { data, error } = await supabase.storage
     .from(ASSETS_BUCKET)
-    .upload(path, buffer, {
+    .upload(normalizedPath, buffer, {
       cacheControl: "3600",
       upsert: true,
       contentType,
@@ -99,6 +139,7 @@ export async function uploadFromUrl(
   const buffer = Buffer.from(await response.arrayBuffer());
   const contentType = response.headers.get("content-type") || "application/octet-stream";
 
+  // uploadFromBuffer에서 이미 normalizePath를 호출하므로 여기서는 추가로 처리하지 않음
   return uploadFromBuffer(buffer, path, contentType);
 }
 

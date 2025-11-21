@@ -135,9 +135,10 @@ export function ProjectStatus({ projectId }: ProjectStatusProps) {
             </p>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            업데이트 대기 중...
-          </p>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            <span>프로젝트 상태를 불러오는 중...</span>
+          </div>
         )}
       </CardContent>
     </Card>

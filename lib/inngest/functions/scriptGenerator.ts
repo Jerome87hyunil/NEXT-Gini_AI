@@ -65,44 +65,63 @@ export const scriptGenerator = inngest.createFunction(
 
     // 4. Gemini로 대본 생성
     const script = await step.run("generate-script", async () => {
-      return await generateScript(
+      const result = await generateScript(
         pdfBase64,
         project.duration as 30 | 60 | 180
       );
+
+      // 디버깅: 생성된 스크립트 확인
+      console.log("🎬 Generated script from Gemini:");
+      console.log(JSON.stringify(result, null, 2));
+
+      return result;
     });
 
     // 5. 씬 생성 (대본을 씬으로 분할)
     const scenes = await step.run("create-scenes", async () => {
       interface SceneScript {
-        text: string;
-        duration?: number;
-        backgroundPriority?: string;
-        emotion?: string;
+        sceneNumber: number;
+        script: string;
         visualDescription?: string;
+        imagePrompt?: string;
+        videoPrompt?: string;
+        priority?: string;
       }
 
       const createdScenes = await prisma.$transaction(
-        script.scenes.map((scene: SceneScript, index: number) =>
-          prisma.scene.create({
+        script.scenes.map((scene: SceneScript, index: number) => {
+          // 디버깅: 각 씬 데이터 확인
+          console.log(`📝 Creating scene ${index + 1}:`, {
+            sceneNumber: scene.sceneNumber || index + 1,
+            hasImagePrompt: !!scene.imagePrompt,
+            hasVideoPrompt: !!scene.videoPrompt,
+            imagePrompt: scene.imagePrompt?.substring(0, 50) + "...",
+            videoPrompt: scene.videoPrompt?.substring(0, 50) + "...",
+          });
+
+          return prisma.scene.create({
             data: {
               projectId,
-              sceneNumber: index + 1,
+              sceneNumber: scene.sceneNumber || index + 1,
               position: index + 1,
-              script: scene.text,
-              duration: scene.duration || 15,
+              script: scene.script,
+              duration: 8, // Veo 3.1 최적 길이
+              visualDescription: scene.visualDescription || "",
+              imagePrompt: scene.imagePrompt || null,
+              videoPrompt: scene.videoPrompt || null,
               backgroundAnalysis: {
-                priority: scene.backgroundPriority || "low",
-                emotion: scene.emotion || "neutral",
+                priority: scene.priority || "high", // 기본값: high (Veo 영상 생성)
                 visualDescription: scene.visualDescription || "",
               },
               ttsStatus: "pending",
               avatarStatus: "pending",
               backgroundStatus: "pending",
             },
-          })
-        )
+          });
+        })
       );
 
+      console.log(`✅ Created ${createdScenes.length} scenes successfully`);
       return createdScenes;
     });
 

@@ -30,13 +30,12 @@ export const ttsGenerator = inngest.createFunction(
       });
     });
 
-    // 3. ElevenLabs TTS 생성
-    const ttsResult = await step.run("generate-tts", async () => {
-      return await generateTTS(scene.script);
-    });
+    // 3. ElevenLabs TTS 생성 및 업로드 (Inngest output size 제한 회피)
+    const audioUrl = await step.run("generate-and-upload-tts", async () => {
+      // TTS 생성
+      const ttsResult = await generateTTS(scene.script);
 
-    // 4. Supabase Storage에 업로드
-    const audioUrl = await step.run("upload-audio", async () => {
+      // 즉시 Supabase Storage에 업로드 (Buffer를 step output으로 반환하지 않음)
       const fileName = `scene_${scene.sceneNumber}_audio.mp3`;
       const storagePath = `projects/${scene.projectId}/audio/${fileName}`;
 
@@ -50,7 +49,7 @@ export const ttsGenerator = inngest.createFunction(
         storagePath,
         "audio/mpeg"
       );
-      return url;
+      return url; // URL만 반환 (크기 작음)
     });
 
     // 5. Asset 생성
@@ -81,6 +80,17 @@ export const ttsGenerator = inngest.createFunction(
           ttsStatus: "completed",
         },
       });
+    });
+
+    // 7. TTS 완료 이벤트 발송 (Scene Processor가 대기 중)
+    await step.sendEvent("tts-completed", {
+      name: "tts/completed",
+      data: {
+        sceneId,
+        projectId: scene.projectId,
+        assetId: asset.id,
+        audioUrl,
+      },
     });
 
     return {
