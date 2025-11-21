@@ -47,18 +47,34 @@ export const avatarGenerator = inngest.createFunction(
 
     // 2. 아바타 이미지 URL 결정 (커스텀 또는 프리셋)
     const avatarImageUrl = await step.run("determine-avatar-url", async () => {
-      if (
-        scene.project.avatarDesignMode === "custom" &&
-        scene.project.assets.length > 0
-      ) {
-        return scene.project.assets[0].url;
+      if (scene.project.avatarDesignMode === "custom") {
+        // 커스텀 아바타 Asset 명시적 조회
+        const avatarDesignAsset = await prisma.asset.findFirst({
+          where: {
+            projectId: scene.projectId,
+            kind: "avatar_design",
+          },
+          orderBy: { createdAt: "desc" }, // 최신 것 우선
+        });
+
+        if (avatarDesignAsset) {
+          console.log(
+            `✅ Using custom avatar design: ${avatarDesignAsset.url}`
+          );
+          return avatarDesignAsset.url;
+        } else {
+          console.warn(
+            `⚠️  Custom avatar design not found for project ${scene.projectId}, falling back to preset`
+          );
+        }
       }
 
       // 프리셋 아바타 URL (환경 변수 또는 기본값)
-      return (
+      const presetUrl =
         process.env.DID_AVATAR_URL ||
-        "https://create-images-results.d-id.com/default_presenter_image_url.webp"
-      );
+        "https://create-images-results.d-id.com/default_presenter_image_url.webp";
+      console.log(`📸 Using preset avatar: ${presetUrl}`);
+      return presetUrl;
     });
 
     // 3. 아바타 상태 업데이트 (generating)

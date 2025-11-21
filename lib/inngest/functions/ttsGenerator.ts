@@ -9,10 +9,19 @@ export const ttsGenerator = inngest.createFunction(
   async ({ event, step }) => {
     const { sceneId } = event.data;
 
-    // 1. 씬 조회
-    const scene = await step.run("fetch-scene", async () => {
+    // 1. 씬 및 프로젝트 조회 (아바타 설정 포함)
+    const data = await step.run("fetch-scene", async () => {
       const scene = await prisma.scene.findUnique({
         where: { id: sceneId },
+        include: {
+          project: {
+            select: {
+              id: true,
+              avatarDesignMode: true,
+              avatarDesignSettings: true,
+            },
+          },
+        },
       });
 
       if (!scene) {
@@ -22,7 +31,37 @@ export const ttsGenerator = inngest.createFunction(
       return scene;
     });
 
-    // 2. TTS 상태 업데이트 (generating)
+    const scene = data;
+
+    // 2. 성별별 보이스 ID 결정
+    const voiceId = await step.run("determine-voice-id", async () => {
+      // 성별별 ElevenLabs 보이스 ID 매핑
+      const VOICE_IDS = {
+        female: "8jHHF8rMqMlg8if2mOUe", // Aria (여성)
+        male: "jB1Cifc2UQbq1gR3wnb0", // Callum (남성)
+      };
+
+      // 커스텀 아바타인 경우 성별 기반 보이스 선택
+      if (scene.project.avatarDesignMode === "custom") {
+        const settings = scene.project.avatarDesignSettings as {
+          gender?: "male" | "female";
+        };
+        const gender = settings?.gender || "female";
+
+        console.log(
+          `✅ Custom avatar detected - using ${gender} voice: ${VOICE_IDS[gender]}`
+        );
+        return VOICE_IDS[gender];
+      }
+
+      // 프리셋 아바타인 경우 기본 보이스 (여성)
+      console.log(
+        `📸 Preset avatar - using default female voice: ${VOICE_IDS.female}`
+      );
+      return VOICE_IDS.female;
+    });
+
+    // 3. TTS 상태 업데이트 (generating)
     await step.run("update-tts-status-generating", async () => {
       await prisma.scene.update({
         where: { id: sceneId },
@@ -30,10 +69,10 @@ export const ttsGenerator = inngest.createFunction(
       });
     });
 
-    // 3. ElevenLabs TTS 생성 및 업로드 (Inngest output size 제한 회피)
+    // 4. ElevenLabs TTS 생성 및 업로드 (Inngest output size 제한 회피)
     const audioUrl = await step.run("generate-and-upload-tts", async () => {
-      // TTS 생성
-      const ttsResult = await generateTTS(scene.script);
+      // TTS 생성 (성별별 보이스 적용)
+      const ttsResult = await generateTTS(scene.script, voiceId);
 
       // 즉시 Supabase Storage에 업로드 (Buffer를 step output으로 반환하지 않음)
       const fileName = `scene_${scene.sceneNumber}_audio.mp3`;
