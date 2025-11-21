@@ -12,19 +12,21 @@ interface SceneProgressProps {
 
 interface Asset {
   id: string;
-  kind: "scene" | "project";
-  type: "audio" | "avatar" | "background_image" | "background_video" | "avatar_design" | "final_video";
+  kind: string;
+  type: string;
   url: string;
 }
 
 interface SceneStatus {
   id: string;
   sceneNumber: number;
-  text: string;
+  script: string;
   ttsStatus: string;
   avatarStatus: string;
   backgroundStatus: string;
-  assets: Asset[];
+  audioAsset?: Asset | null;
+  avatarAsset?: Asset | null;
+  backgroundAsset?: Asset | null;
 }
 
 export function SceneProgress({ projectId }: SceneProgressProps) {
@@ -72,34 +74,8 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
               )
             );
           } else if (payload.eventType === "INSERT") {
-            // 새 씬 추가 시 assets 배열 초기화
-            setScenes((prev) => [...prev, { ...payload.new, assets: [] } as SceneStatus]);
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "Asset",
-        },
-        (payload) => {
-          console.log("Asset created:", payload);
-          const newAsset = payload.new;
-
-          // 해당 씬에 자산 추가
-          if (newAsset.sceneId) {
-            setScenes((prev) =>
-              prev.map((scene) =>
-                scene.id === newAsset.sceneId
-                  ? {
-                      ...scene,
-                      assets: [...scene.assets, newAsset as Asset],
-                    }
-                  : scene
-              )
-            );
+            // 새 씬 추가
+            setScenes((prev) => [...prev, payload.new as SceneStatus]);
           }
         }
       )
@@ -220,7 +196,7 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
                     씬 {scene.sceneNumber}
                   </h4>
                   <p className="text-xs text-muted-foreground line-clamp-1 mt-1">
-                    {scene.text}
+                    {scene.script}
                   </p>
                 </div>
               </div>
@@ -252,50 +228,49 @@ export function SceneProgress({ projectId }: SceneProgressProps) {
               </div>
 
               {/* 완료된 자산 미리보기 */}
-              {scene.assets.length > 0 && (
+              {(scene.audioAsset || scene.avatarAsset || scene.backgroundAsset) && (
                 <div className="mt-3 pt-3 border-t space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">완료된 결과물</p>
                   <div className="grid grid-cols-3 gap-2">
                     {/* TTS 오디오 */}
-                    {scene.assets.find((a) => a.type === "audio") && (
+                    {scene.audioAsset && (
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">오디오</p>
                         <audio
                           controls
                           className="w-full h-8"
-                          src={scene.assets.find((a) => a.type === "audio")?.url}
+                          src={scene.audioAsset.url}
                         />
                       </div>
                     )}
 
                     {/* 아바타 영상 */}
-                    {scene.assets.find((a) => a.type === "avatar") && (
+                    {scene.avatarAsset && (
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">아바타</p>
                         <video
                           controls
                           className="w-full h-20 rounded object-cover bg-black"
-                          src={scene.assets.find((a) => a.type === "avatar")?.url}
+                          src={scene.avatarAsset.url}
                         />
                       </div>
                     )}
 
                     {/* 배경 이미지/영상 */}
-                    {(scene.assets.find((a) => a.type === "background_image") ||
-                      scene.assets.find((a) => a.type === "background_video")) && (
+                    {scene.backgroundAsset && (
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">배경</p>
-                        {scene.assets.find((a) => a.type === "background_video") ? (
+                        {scene.backgroundAsset.type === "background_video" ? (
                           <video
                             controls
                             className="w-full h-20 rounded object-cover bg-black"
-                            src={scene.assets.find((a) => a.type === "background_video")?.url}
+                            src={scene.backgroundAsset.url}
                           />
                         ) : (
                           <img
                             alt="배경 이미지"
                             className="w-full h-20 rounded object-cover"
-                            src={scene.assets.find((a) => a.type === "background_image")?.url}
+                            src={scene.backgroundAsset.url}
                           />
                         )}
                       </div>

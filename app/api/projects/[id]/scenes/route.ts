@@ -33,11 +33,27 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // 씬 + 자산 조회
+    // 씬 + 자산 조회 (명시적 Asset 관계 포함)
     const scenes = await prisma.scene.findMany({
       where: { projectId },
       include: {
-        assets: {
+        audioAsset: {
+          select: {
+            id: true,
+            kind: true,
+            type: true,
+            url: true,
+          },
+        },
+        avatarAsset: {
+          select: {
+            id: true,
+            kind: true,
+            type: true,
+            url: true,
+          },
+        },
+        backgroundAsset: {
           select: {
             id: true,
             kind: true,
