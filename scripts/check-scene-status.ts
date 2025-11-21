@@ -58,15 +58,6 @@ async function main() {
       orderBy: {
         createdAt: "desc",
       },
-      include: {
-        scene: {
-          select: {
-            id: true,
-            sceneNumber: true,
-            backgroundStatus: true,
-          },
-        },
-      },
     });
 
     console.log(`📦 최근 VEO RenderJob ${veoJobs.length}개:\n`);
@@ -74,7 +65,7 @@ async function main() {
     for (const job of veoJobs) {
       console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       console.log(`🆔 Job ID: ${job.id}`);
-      console.log(`📝 Scene: ${job.scene?.sceneNumber || "N/A"} (${job.scene?.backgroundStatus || "N/A"})`);
+      console.log(`📝 Scene ID: ${job.sceneId || "N/A"}`);
       console.log(`📊 Status: ${job.status}`);
       console.log(`🔗 External ID: ${job.externalId || "N/A"}`);
       console.log(`📅 Created: ${job.createdAt.toISOString()}`);

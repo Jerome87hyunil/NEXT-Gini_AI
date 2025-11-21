@@ -88,24 +88,30 @@ export const avatarDesignGenerator = inngest.createFunction(
 
         const { url } = await uploadFromBuffer(buffer, storagePath, "image/png");
         return url; // URL만 반환 (크기 작음)
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Avatar design generation failed:", error);
+
+        // 타입 가드: Error 객체인지 확인
+        const isError = error instanceof Error;
+        const errorMessage = isError ? error.message : String(error);
+        const errorCode = (error as { code?: number })?.code;
+        const errorStatus = (error as { status?: string })?.status;
 
         // 폴백 대상 에러 판단
         const shouldFallback =
-          error.message?.includes("Quota exceeded") ||
-          error.message?.includes("RESOURCE_EXHAUSTED") ||
-          error.message?.includes("not found") ||
-          error.message?.includes("NOT_FOUND") ||
-          error.code === 404 ||
-          error.code === 429 ||
-          error.status === "NOT_FOUND";
+          errorMessage.includes("Quota exceeded") ||
+          errorMessage.includes("RESOURCE_EXHAUSTED") ||
+          errorMessage.includes("not found") ||
+          errorMessage.includes("NOT_FOUND") ||
+          errorCode === 404 ||
+          errorCode === 429 ||
+          errorStatus === "NOT_FOUND";
 
         if (shouldFallback) {
           const errorReason =
-            error.code === 404 || error.status === "NOT_FOUND"
+            errorCode === 404 || errorStatus === "NOT_FOUND"
               ? "Model not found"
-              : error.code === 429
+              : errorCode === 429
               ? "Quota exceeded"
               : "API error";
 
@@ -120,7 +126,7 @@ export const avatarDesignGenerator = inngest.createFunction(
               avatarDesignStatus: "failed",
               metadata: {
                 avatarDesignError: errorReason,
-                avatarDesignErrorDetails: error.message,
+                avatarDesignErrorDetails: errorMessage,
                 fallbackToPreset: true,
                 errorTimestamp: new Date().toISOString(),
               },

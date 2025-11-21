@@ -132,7 +132,7 @@ export const veoVideoPolling = inngest.createFunction(
       // Buffer 타입 보장
       const videoBuffer = Buffer.isBuffer(fullResult.videoBuffer)
         ? fullResult.videoBuffer
-        : Buffer.from(fullResult.videoBuffer as any);
+        : Buffer.from(fullResult.videoBuffer as unknown as ArrayBuffer);
 
       console.log(`✅ Veo video fetched: ${videoBuffer.length} bytes`);
 

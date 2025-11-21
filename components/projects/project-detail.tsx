@@ -32,7 +32,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X, Volume2, Video, Image } from "lucide-react";
+import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X } from "lucide-react";
 import { ProjectStatus } from "@/components/realtime/project-status";
 import { SceneProgress } from "@/components/realtime/scene-progress";
 import { VideoPlayer } from "@/components/video/video-player";
