@@ -39,3 +39,6 @@ next-env.d.ts
 # prisma
 /prisma/migrations
 dev-server.log
+*.json
+!package.json
+!tsconfig.json

@@ -72,15 +72,18 @@ export const backgroundGenerator = inngest.createFunction(
     }
 
     // Medium/High priority: Nano Banana 이미지 생성 및 업로드 (Inngest output size 제한 회피)
-    // imagePrompt 우선 사용, 없으면 visualDescription, 그것도 없으면 기본값
+    // imagePrompt 우선 사용, 없으면 visualDescription, 그것도 없으면 개선된 기본값
     const imagePrompt =
       scene.imagePrompt ||
       analysis?.visualDescription ||
-      `A professional presentation background with ${analysis?.emotion || "neutral"} atmosphere`;
+      `Modern professional presentation environment featuring clean minimalist design.
+      Sophisticated office or conference setting with contemporary architecture and elegant furnishings.
+      Subtle business context elements including workspace details and professional ambiance.`;
 
     const imageUrl = await step.run("generate-and-upload-nano-image", async () => {
-      // 이미지 생성
-      const imageBuffer = await generateBackgroundImage(imagePrompt);
+      // 이미지 생성 (emotion 파라미터 전달하여 조명/색상 최적화)
+      const emotion = analysis?.emotion || "professional";
+      const imageBuffer = await generateBackgroundImage(imagePrompt, emotion);
 
       // 즉시 Supabase Storage에 업로드 (Buffer를 step output으로 반환하지 않음)
       const fileName = `scene_${scene.sceneNumber}_background.png`;
@@ -141,6 +144,7 @@ export const backgroundGenerator = inngest.createFunction(
           imageAssetId: asset.id,
           imageUrl,
           videoPrompt, // videoPrompt 전달
+          emotion: analysis?.emotion || "professional", // emotion 전달
         },
       });
 

@@ -6,7 +6,7 @@ export const veoVideoGenerator = inngest.createFunction(
   { id: "veo-video-generator", retries: 2, concurrency: [{ limit: 2 }] },
   { event: "veo/generation.requested" },
   async ({ event, step }) => {
-    const { sceneId, imageAssetId, imageUrl, videoPrompt } = event.data;
+    const { sceneId, imageAssetId, imageUrl, videoPrompt, emotion } = event.data;
 
     // 1. 씬 조회
     const scene = await step.run("fetch-scene", async () => {
@@ -33,8 +33,9 @@ export const veoVideoGenerator = inngest.createFunction(
       console.log(`   Scene ID: ${sceneId}`);
       console.log(`   Image URL: ${imageUrl}`);
       console.log(`   Video Prompt: ${prompt}`);
+      console.log(`   Emotion: ${emotion || "professional"}`);
 
-      return await generateVeoVideo(imageUrl, prompt);
+      return await generateVeoVideo(imageUrl, prompt, emotion);
     });
 
     // 3. RenderJob 생성 (Veo LRO 추적)

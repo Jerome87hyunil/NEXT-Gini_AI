@@ -215,18 +215,100 @@ Front-facing view, suitable for video avatar animation.
 }
 
 /**
+ * 이미지 프롬프트 향상
+ *
+ * Google 공식 가이드라인에 따라 간단한 프롬프트를 상세한 서술형 문단으로 확장
+ * https://ai.google.dev/gemini-api/docs/image-generation?hl=ko#image-generation-prompts
+ *
+ * @param rawPrompt - 원본 프롬프트
+ * @param emotion - 감정/분위기 (조명과 색상 결정)
+ * @returns 향상된 프롬프트
+ */
+function enhanceImagePrompt(
+  rawPrompt: string,
+  emotion: string = "professional"
+): string {
+  // 이미 상세한 프롬프트인 경우 (100자 이상, 조명/카메라 용어 포함)
+  const hasLightingTerms = /light|lighting|illuminat|glow|shadow|bright/i.test(rawPrompt);
+  const hasCameraTerms = /composition|angle|shot|focus|depth|lens|frame/i.test(rawPrompt);
+  const hasQualityTerms = /8k|4k|photorealistic|cinematic|detailed|quality/i.test(rawPrompt);
+
+  if (
+    rawPrompt.length > 100 &&
+    hasLightingTerms &&
+    hasCameraTerms &&
+    hasQualityTerms
+  ) {
+    console.log("   ✓ Prompt already detailed, using as-is");
+    return rawPrompt;
+  }
+
+  // 감정에 따른 조명 및 색상 팔레트 설정
+  const lightingAndColors = {
+    professional: {
+      lighting: "soft natural daylight streaming through large windows, balanced studio lighting with subtle shadows",
+      colors: "cool neutral tones with hints of blue and gray, professional color grading",
+      mood: "clean, focused, and sophisticated"
+    },
+    energetic: {
+      lighting: "bright studio lighting with dynamic highlights, vibrant illumination creating energy",
+      colors: "warm vibrant colors with pops of orange and yellow, saturated color palette",
+      mood: "dynamic, engaging, and lively"
+    },
+    calm: {
+      lighting: "gentle ambient light with soft diffusion, minimal shadows creating tranquility",
+      colors: "cool blues and soft greens with pastel accents, serene color harmony",
+      mood: "peaceful, relaxing, and contemplative"
+    },
+    innovative: {
+      lighting: "modern LED accent lighting, sleek illumination with gradient effects",
+      colors: "tech-inspired blues and purples, futuristic color scheme",
+      mood: "cutting-edge, modern, and forward-thinking"
+    },
+    neutral: {
+      lighting: "balanced natural and artificial lighting, even illumination across the scene",
+      colors: "natural color palette with harmonious tones, realistic color reproduction",
+      mood: "clear, straightforward, and authentic"
+    }
+  };
+
+  const style = lightingAndColors[emotion.toLowerCase() as keyof typeof lightingAndColors]
+    || lightingAndColors.neutral;
+
+  // 공식 가이드라인에 따른 서술형 프롬프트 구성
+  const enhancedPrompt = `
+${rawPrompt.trim()}.
+The scene is photographed with professional camera equipment, utilizing a wide-angle lens for comprehensive framing in 16:9 aspect ratio composition.
+${style.lighting}, creating a ${style.mood} atmosphere throughout the environment.
+The setting features ${style.colors}, with meticulous attention to material textures and surface qualities.
+Rich environmental details include smooth polished surfaces, natural material textures, and carefully considered spatial depth.
+The composition employs centered framing with strategic use of depth of field, ensuring sharp focus on key elements while maintaining contextual background clarity.
+Rendered in 8k resolution with photorealistic quality, featuring cinematic color grading, high dynamic range, and professional post-processing for maximum visual impact and realism.
+  `.trim();
+
+  console.log(`   ✓ Enhanced prompt from ${rawPrompt.length} to ${enhancedPrompt.length} characters`);
+  return enhancedPrompt;
+}
+
+/**
  * Nano Banana - 씬 배경 이미지 생성
  *
  * @param imagePrompt - 이미지 생성 프롬프트 (16:9, photorealistic)
+ * @param emotion - 감정/분위기 (선택사항, 프롬프트 향상에 사용)
  * @returns 생성된 이미지 Buffer
  */
 export async function generateBackgroundImage(
-  imagePrompt: string
+  imagePrompt: string,
+  emotion?: string
 ): Promise<Buffer> {
   console.log(`🎨 Generating background image with Gemini 2.5 Flash Image`);
-  console.log(`   Prompt: ${imagePrompt.substring(0, 150)}...`);
+  console.log(`   Original prompt: ${imagePrompt.substring(0, 100)}...`);
 
-  // Gemini 2.5 Flash Image 모델 사용 (generateAvatarDesign과 동일)
+  // 프롬프트 향상 (공식 가이드라인 적용)
+  const enhancedPrompt = enhanceImagePrompt(imagePrompt, emotion);
+  console.log(`   Enhanced prompt: ${enhancedPrompt.substring(0, 150)}...`);
+
+  // Gemini 2.5 Flash Image 모델 사용
   const model = vertexAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
   });
@@ -235,7 +317,7 @@ export async function generateBackgroundImage(
     contents: [
       {
         role: "user",
-        parts: [{ text: imagePrompt }],
+        parts: [{ text: enhancedPrompt }],
       },
     ],
     generationConfig: {
@@ -244,7 +326,7 @@ export async function generateBackgroundImage(
     },
   });
 
-  // 이미지 데이터 추출 (generateAvatarDesign과 동일한 방식)
+  // 이미지 데이터 추출
   const imageData = result.response.candidates?.[0]?.content?.parts?.[0];
   if (!imageData || !("inlineData" in imageData)) {
     console.error("❌ No image data in Gemini response");
@@ -265,11 +347,13 @@ export async function generateBackgroundImage(
  *
  * @param imageUrl - 기준 이미지 URL
  * @param prompt - 영상 설명
+ * @param emotion - 감정/분위기 (선택사항, 카메라 움직임 최적화)
  * @returns Operation 정보
  */
 export async function generateVeoVideo(
   imageUrl: string,
-  prompt: string
+  prompt: string,
+  emotion?: string
 ): Promise<{ name: string }> {
   const { GoogleAuth } = await import("google-auth-library");
 
@@ -303,12 +387,13 @@ export async function generateVeoVideo(
   // Veo 3.0 Fast API 엔드포인트 (predictLongRunning 사용)
   const endpoint = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/veo-3.0-fast-generate-001:predictLongRunning`;
 
-  // 영화 품질 프롬프트 강화
-  const cinematicPrompt = enhanceCinematicPrompt(prompt);
+  // 프롬프트 향상 (공식 가이드라인 적용)
+  const enhancedPrompt = enhanceVideoPrompt(prompt, emotion);
 
   console.log(`🎬 Calling Veo 3.1 API:`);
   console.log(`   Endpoint: ${endpoint}`);
-  console.log(`   Prompt: ${cinematicPrompt.substring(0, 200)}...`);
+  console.log(`   Original prompt: ${prompt.substring(0, 100)}...`);
+  console.log(`   Enhanced prompt: ${enhancedPrompt.substring(0, 150)}...`);
 
   // API 요청 (Veo 형식)
   const response = await fetch(endpoint, {
@@ -320,7 +405,7 @@ export async function generateVeoVideo(
     body: JSON.stringify({
       instances: [
         {
-          prompt: cinematicPrompt,
+          prompt: enhancedPrompt,
           image: {
             bytesBase64Encoded: imageBase64,
             mimeType: "image/png",
@@ -366,25 +451,87 @@ export async function generateVeoVideo(
 }
 
 /**
- * 영화 품질 프롬프트 강화
+ * Veo 동영상 프롬프트 향상
+ *
+ * Google 공식 가이드라인에 따라 간단한 프롬프트를 영화적 표현으로 강화
+ * https://ai.google.dev/gemini-api/docs/video?hl=ko#prompt-guide
+ *
+ * @param rawPrompt - 원본 프롬프트
+ * @param emotion - 감정/분위기 (카메라 움직임과 조명 결정)
+ * @returns 향상된 동영상 프롬프트
  */
-function enhanceCinematicPrompt(prompt: string): string {
-  // 이미 cinematic 키워드가 있으면 그대로 반환
-  if (prompt.toLowerCase().includes("cinematic")) {
-    return prompt;
+function enhanceVideoPrompt(
+  rawPrompt: string,
+  emotion: string = "professional"
+): string {
+  // 이미 상세한 프롬프트인 경우 (80자 이상, 카메라/조명 용어 포함)
+  const hasCameraTerms = /shot|camera|tracking|drone|pan|tilt|dolly|zoom|pov|angle/i.test(rawPrompt);
+  const hasLightingTerms = /light|lighting|shadow|glow|bright|dark|golden|atmosphere/i.test(rawPrompt);
+  const hasMotionTerms = /slow|smooth|gentle|dynamic|subtle|movement|motion|drift/i.test(rawPrompt);
+
+  if (
+    rawPrompt.length > 80 &&
+    hasCameraTerms &&
+    hasLightingTerms &&
+    hasMotionTerms
+  ) {
+    console.log("   ✓ Video prompt already detailed, using as-is");
+    return rawPrompt;
   }
 
-  // 영화 품질 향상 키워드 추가
-  const cinematicEnhancements = [
-    "cinematic quality",
-    "professional cinematography",
-    "smooth camera movement",
-    "dramatic lighting",
-    "film-grade color grading",
-    "8-second duration",
-  ];
+  // 감정에 따른 카메라 움직임 및 분위기 설정
+  const cinematicStyles = {
+    professional: {
+      camera: "Steady tracking shot with subtle horizontal pan, maintaining professional composition throughout",
+      motion: "Smooth, measured camera movement with gentle transitions",
+      lighting: "Balanced ambient lighting with soft natural tones",
+      atmosphere: "clean, focused, and authoritative visual narrative",
+      pacing: "deliberate and purposeful progression"
+    },
+    energetic: {
+      camera: "Dynamic drone shot with sweeping movement, incorporating quick pans and varied perspectives",
+      motion: "Energetic camera work with fluid transitions and active framing",
+      lighting: "Vibrant illumination with warm highlights and dynamic contrast",
+      atmosphere: "lively, engaging, and momentum-driven visual story",
+      pacing: "brisk and exciting progression with rapid visual interest"
+    },
+    calm: {
+      camera: "Slow dolly movement with gentle drift, peaceful and contemplative camera flow",
+      motion: "Serene, unhurried camera motion with graceful transitions",
+      lighting: "Soft ambient glow with tranquil color temperature",
+      atmosphere: "peaceful, meditative, and soothing visual experience",
+      pacing: "leisurely and calming progression"
+    },
+    innovative: {
+      camera: "Creative camera angles with experimental movement, modern cinematographic approach",
+      motion: "Unconventional camera paths with artistic transitions",
+      lighting: "Contemporary lighting design with sleek modern aesthetics",
+      atmosphere: "cutting-edge, visually striking, and thought-provoking narrative",
+      pacing: "progressive and forward-thinking visual development"
+    },
+    neutral: {
+      camera: "Standard cinematic camera work with natural movement patterns",
+      motion: "Balanced camera motion with organic transitions",
+      lighting: "Natural lighting conditions with realistic illumination",
+      atmosphere: "straightforward, authentic, and clear visual presentation",
+      pacing: "steady and natural progression"
+    }
+  };
 
-  return `${prompt}, ${cinematicEnhancements.join(", ")}`;
+  const style = cinematicStyles[emotion.toLowerCase() as keyof typeof cinematicStyles]
+    || cinematicStyles.neutral;
+
+  // 공식 가이드라인에 따른 서술형 프롬프트 구성
+  const enhancedPrompt = `
+${rawPrompt.trim()}.
+${style.camera}, creating a ${style.atmosphere}.
+${style.motion}, with ${style.lighting} establishing the mood and visual tone.
+The sequence unfolds over 8 seconds with ${style.pacing}, featuring smooth temporal continuity and cinematic color grading.
+Professional cinematography with film-grade quality, incorporating subtle environmental changes and atmospheric depth throughout the duration.
+  `.trim();
+
+  console.log(`   ✓ Enhanced video prompt from ${rawPrompt.length} to ${enhancedPrompt.length} characters`);
+  return enhancedPrompt;
 }
 
 /**
