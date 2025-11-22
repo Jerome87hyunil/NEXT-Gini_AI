@@ -71,7 +71,10 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    console.log("📥 POST /api/projects - Request body:", JSON.stringify(body, null, 2));
+
     const validated = createProjectSchema.parse(body);
+    console.log("✅ Validated data:", JSON.stringify(validated, null, 2));
 
     // 프로젝트 생성
     const project = await prisma.project.create({
@@ -86,6 +89,12 @@ export async function POST(request: Request) {
         settings: validated.settings || {},
         status: "draft",
       },
+    });
+
+    console.log("✅ Created project:", {
+      id: project.id,
+      settings: project.settings,
+      backgroundQuality: (project.settings as Record<string, unknown>)?.backgroundQuality,
     });
 
     // 생성자에게 owner 권한 부여

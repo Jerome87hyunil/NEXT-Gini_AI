@@ -137,10 +137,16 @@ export const scriptGenerator = inngest.createFunction(
       }
 
       // 프로젝트 설정에서 backgroundQuality 가져오기
+      console.log(`🔍 Project settings (raw):`, JSON.stringify(project.settings, null, 2));
+
       const projectSettings = (project.settings as Record<string, unknown>) || {};
+      console.log(`🔍 Project settings (parsed):`, projectSettings);
+      console.log(`🔍 backgroundQuality (raw):`, projectSettings.backgroundQuality);
+
       const backgroundQuality = (projectSettings.backgroundQuality as "high" | "medium" | "low") || "high";
 
       console.log(`🎨 Background quality setting: ${backgroundQuality} (from project settings)`);
+      console.log(`🎨 Type of backgroundQuality:`, typeof backgroundQuality);
 
       const createdScenes = await prisma.$transaction(
         script.scenes.map((scene: SceneScript, index: number) => {
