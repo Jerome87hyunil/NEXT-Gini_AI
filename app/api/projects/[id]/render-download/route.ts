@@ -84,17 +84,18 @@ export async function POST(
     tempDir = path.join(os.tmpdir(), `render_${projectId}_${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
 
-    // 6. 씬별 합성 비디오 다운로드
-    console.log(`[Render] Starting download for ${project.scenes.length} scenes`);
+    // 6. 씬별 자산 다운로드 및 합성
+    console.log(`[Render] Starting composition for ${project.scenes.length} scenes`);
 
     const composedScenePaths: string[] = [];
 
     for (const scene of project.scenes) {
-      // 씬별 합성 비디오 자산 조회
-      const composedAsset = await prisma.asset.findFirst({
+      console.log(`[Render] Processing scene ${scene.sceneNumber}...`);
+
+      // 6-1. 씬별 자산 조회
+      const assets = await prisma.asset.findMany({
         where: {
           projectId,
-          kind: "composed_scene",
           metadata: {
             path: ["sceneNumber"],
             equals: scene.sceneNumber,
@@ -102,25 +103,55 @@ export async function POST(
         },
       });
 
-      if (!composedAsset) {
+      const audioAsset = assets.find((a) => a.kind === "audio");
+      const avatarAsset = assets.find((a) => a.kind === "avatar_video");
+      const backgroundAsset = assets.find(
+        (a) => a.kind === "background_video" || a.kind === "background_image"
+      );
+
+      if (!audioAsset || !avatarAsset || !backgroundAsset) {
         throw new Error(
-          `Composed video not found for scene ${scene.sceneNumber}`
+          `Missing assets for scene ${scene.sceneNumber}. ` +
+            `Audio: ${!!audioAsset}, Avatar: ${!!avatarAsset}, Background: ${!!backgroundAsset}`
         );
       }
 
-      // Supabase에서 합성 비디오 다운로드
-      const blob = await downloadFile(composedAsset.storagePath);
-      const buffer = Buffer.from(await blob.arrayBuffer());
-
-      // 로컬 임시 파일로 저장
-      const localPath = path.join(tempDir, `scene_${scene.sceneNumber}.mp4`);
-      await fs.writeFile(localPath, buffer);
-
-      composedScenePaths.push(localPath);
-
-      console.log(
-        `[Render] Downloaded scene ${scene.sceneNumber} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`
+      // 6-2. 배경 다운로드
+      const backgroundExt =
+        backgroundAsset.kind === "background_video" ? ".mp4" : ".png";
+      const backgroundPath = path.join(
+        tempDir,
+        `bg_${scene.sceneNumber}${backgroundExt}`
       );
+
+      const bgBlob = await downloadFile(backgroundAsset.storagePath);
+      const bgBuffer = Buffer.from(await bgBlob.arrayBuffer());
+      await fs.writeFile(backgroundPath, bgBuffer);
+
+      // 6-3. 아바타 비디오 다운로드
+      const avatarPath = path.join(tempDir, `avatar_${scene.sceneNumber}.mp4`);
+
+      const avatarBlob = await downloadFile(avatarAsset.storagePath);
+      const avatarBuffer = Buffer.from(await avatarBlob.arrayBuffer());
+      await fs.writeFile(avatarPath, avatarBuffer);
+
+      // 6-4. FFmpeg로 배경 + 아바타 합성
+      const composedPath = path.join(tempDir, `composed_${scene.sceneNumber}.mp4`);
+
+      const command = ffmpeg.buildCompositionCommand(
+        backgroundPath,
+        avatarPath,
+        composedPath
+      );
+
+      await ffmpeg.executeCommand(
+        command,
+        `Scene ${scene.sceneNumber} composition`
+      );
+
+      composedScenePaths.push(composedPath);
+
+      console.log(`[Render] Scene ${scene.sceneNumber} composed successfully`);
     }
 
     // 7. FFmpeg concat 실행
