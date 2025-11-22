@@ -40,6 +40,9 @@ export function ProjectForm() {
       background: "gradient" as "gradient" | "solid" | "office",
       nationality: "korean" as "korean" | "japanese" | "american",
     },
+    settings: {
+      backgroundQuality: "high" as "high" | "medium" | "low",
+    },
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -134,6 +137,36 @@ export function ProjectForm() {
             </Select>
             <p className="text-sm text-muted-foreground">
               영상 길이에 따라 씬 개수가 자동 조정됩니다
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="backgroundQuality">
+              배경 영상 품질 <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={formData.settings.backgroundQuality}
+              onValueChange={(value) =>
+                setFormData({
+                  ...formData,
+                  settings: {
+                    ...formData.settings,
+                    backgroundQuality: value as "high" | "medium" | "low",
+                  },
+                })
+              }
+            >
+              <SelectTrigger id="backgroundQuality">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="high">High - Veo 영상 생성 (모든 씬, ~$1.50/씬)</SelectItem>
+                <SelectItem value="medium">Medium - Nano 이미지 생성 (모든 씬, ~$0.039/씬)</SelectItem>
+                <SelectItem value="low">Low - 그라데이션 배경 (무료)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              배경 품질에 따라 비용이 달라집니다. High는 모든 씬에 Veo 영상을 생성합니다.
             </p>
           </div>
 

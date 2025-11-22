@@ -59,10 +59,6 @@ export async function generateScript(
                 visualDescription: { type: SchemaType.STRING },
                 imagePrompt: { type: SchemaType.STRING },
                 videoPrompt: { type: SchemaType.STRING },
-                priority: {
-                  type: SchemaType.STRING,
-                  enum: ["high", "medium", "low"]
-                },
                 emotion: { type: SchemaType.STRING }
               },
               required: ["sceneNumber", "script", "duration", "visualDescription"]
@@ -120,7 +116,6 @@ export async function generateScript(
      * 동적 요소 (subtle movement, light changes)
      * 8초 길이에 적합한 변화
      * 예: "Slow camera pan from left to right across the office space, subtle light movement through windows, smooth transition, 8 seconds duration, cinematic motion"
-   - 우선순위 (priority): "high" (중요), "medium" (보통), "low" (덜 중요)
 
 응답 형식 (JSON):
 {
@@ -130,8 +125,7 @@ export async function generateScript(
       "script": "v1.0은 코드 중심 협업 시대를 열었습니다.",
       "visualDescription": "현대적인 사무실 배경",
       "imagePrompt": "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting",
-      "videoPrompt": "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 8 seconds duration",
-      "priority": "high"
+      "videoPrompt": "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 8 seconds duration"
     }
   ]
 }

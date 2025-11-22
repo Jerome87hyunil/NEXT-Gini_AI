@@ -136,6 +136,12 @@ export const scriptGenerator = inngest.createFunction(
         return result.trim();
       }
 
+      // 프로젝트 설정에서 backgroundQuality 가져오기
+      const projectSettings = (project.settings as Record<string, unknown>) || {};
+      const backgroundQuality = (projectSettings.backgroundQuality as "high" | "medium" | "low") || "high";
+
+      console.log(`🎨 Background quality setting: ${backgroundQuality} (from project settings)`);
+
       const createdScenes = await prisma.$transaction(
         script.scenes.map((scene: SceneScript, index: number) => {
           // 대본 검증 및 자동 수정
@@ -150,6 +156,7 @@ export const scriptGenerator = inngest.createFunction(
             scriptLength: validatedScript.replace(/\s/g, '').length,
             hasImagePrompt: !!scene.imagePrompt,
             hasVideoPrompt: !!scene.videoPrompt,
+            backgroundQuality, // 프로젝트 설정값 출력
             imagePrompt: scene.imagePrompt?.substring(0, 50) + "...",
             videoPrompt: scene.videoPrompt?.substring(0, 50) + "...",
           });
@@ -165,7 +172,7 @@ export const scriptGenerator = inngest.createFunction(
               imagePrompt: scene.imagePrompt || null,
               videoPrompt: scene.videoPrompt || null,
               backgroundAnalysis: {
-                priority: "high", // 모든 씬 강제 High (Veo 영상 생성)
+                priority: backgroundQuality, // 프로젝트 설정값 사용 (하드코딩 제거)
                 visualDescription: scene.visualDescription || "",
               },
               ttsStatus: "pending",
