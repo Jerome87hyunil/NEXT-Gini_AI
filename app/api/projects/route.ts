@@ -8,6 +8,7 @@ import { z } from "zod";
 const createProjectSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().optional(),
+  duration: z.number().int().positive().default(30), // 영상 길이 (초 단위)
   avatarDesignMode: z.enum(["preset", "custom"]).default("preset"),
   avatarDesignSettings: z.record(z.any()).optional(),
   settings: z.record(z.any()).optional(),
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
       data: {
         title: validated.title,
         description: validated.description,
+        duration: validated.duration, // 영상 길이 저장
         organizationId: session.user.organizationId,
         createdById: session.user.id,
         avatarDesignMode: validated.avatarDesignMode,
