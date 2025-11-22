@@ -395,16 +395,19 @@ export async function generateBackgroundImage(
     throw new Error(`Gemini generation failed: ${candidate.finishReason}`);
   }
 
-  // 3. 이미지 데이터 확인
+  // 3. 이미지 데이터 확인 (직접 속성 접근)
   const imageData = candidate.content?.parts?.[0];
-  if (!imageData || !("inlineData" in imageData)) {
+  const inlineData = (imageData as any)?.inlineData;
+
+  if (!inlineData || !inlineData.data) {
     console.error("❌ No image data in candidate");
     console.error("   Candidate structure:", JSON.stringify(candidate, null, 2));
+    console.error("   imageData:", JSON.stringify(imageData, null, 2));
     throw new Error("No image data in Gemini response");
   }
 
   // Base64 디코딩하여 Buffer 반환
-  const base64Data = imageData.inlineData?.data || "";
+  const base64Data = inlineData.data;
   const buffer = Buffer.from(base64Data, "base64");
 
   console.log(`✅ Background image generated: ${buffer.length} bytes`);
