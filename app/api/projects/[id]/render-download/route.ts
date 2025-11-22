@@ -191,12 +191,14 @@ export async function POST(
     });
 
     // 10. 스트리밍 응답 (다운로드)
+    // RFC 5987: 한글 파일명 지원
     const fileName = `${project.title || "video"}.mp4`;
+    const encodedFileName = encodeURIComponent(fileName);
 
     return new NextResponse(videoBuffer, {
       headers: {
         "Content-Type": "video/mp4",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": `attachment; filename="video.mp4"; filename*=UTF-8''${encodedFileName}`,
         "Content-Length": videoBuffer.length.toString(),
       },
     });
