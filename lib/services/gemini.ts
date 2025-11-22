@@ -155,6 +155,17 @@ export async function generateScript(
   // 패턴 3: /* 주석 */ 제거
   jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
 
+  // 패턴 4: innerHTML}, le 같은 쓰레기 텍스트 제거
+  jsonText = jsonText.replace(/innerHTML\},/g, '');
+  jsonText = jsonText.replace(/\ble\b/g, '');
+
+  // 패턴 5: 잘못된 속성 이름 수정 ("priority-" → "priority")
+  jsonText = jsonText.replace(/"priority-":/g, '"priority":');
+
+  // 패턴 6: 한글이 섞인 영어 단어 정리 (예: "경찰ow" → "glow")
+  jsonText = jsonText.replace(/경찰ow/g, 'glow');
+  jsonText = jsonText.replace(/લાભrtain/g, 'certain');
+
   // 연속된 쉼표 정리 (,, → ,)
   jsonText = jsonText.replace(/,\s*,/g, ',');
 
