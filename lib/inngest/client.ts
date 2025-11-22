@@ -21,18 +21,20 @@ export const inngest = new Inngest({
 
 /**
  * Inngest 이벤트 전송 (개발 환경 대응)
+ *
+ * ✅ Inngest Dev Server 실행 중이면 무조건 전송
+ * ❌ Dev Server 없고 키도 없으면 로그만 출력
  */
 export async function sendEvent(payload: {
   name: string;
   data: Record<string, unknown>;
 }): Promise<void> {
-  if (!hasInngestKeys && isDevelopment) {
-    console.log("🔧 [Dev Mode] Inngest 이벤트 (실제 전송 안함):", {
-      name: payload.name,
-      data: payload.data,
-    });
-    return;
-  }
-
+  // Inngest Dev Server가 실행 중이면 항상 이벤트 전송
+  // (키가 없어도 로컬 Dev Server로 전송됨)
   await inngest.send(payload);
+
+  console.log("📤 Inngest 이벤트 전송:", {
+    name: payload.name,
+    projectId: payload.data.projectId,
+  });
 }
