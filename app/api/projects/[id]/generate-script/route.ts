@@ -72,6 +72,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
       project.duration as 30 | 60 | 180
     );
 
+    // 프로젝트 설정에서 backgroundQuality 가져오기
+    console.log(`🔍 [generate-script] Project settings:`, JSON.stringify(project.settings, null, 2));
+    const projectSettings = (project.settings as Record<string, unknown>) || {};
+    const backgroundQuality = (projectSettings.backgroundQuality as "high" | "medium" | "low") || "high";
+    console.log(`🎨 [generate-script] Background quality: ${backgroundQuality} (will apply to all ${scriptData.scenes.length} scenes)`);
+
     // Scene 레코드 생성
     const scenes = await Promise.all(
       scriptData.scenes.map(async (scene: {
@@ -85,6 +91,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
         priority?: string;
         emotion?: string
       }, index: number) => {
+        console.log(`📝 [generate-script] Creating scene ${index + 1} with priority: ${backgroundQuality}`);
+
         return prisma.scene.create({
           data: {
             projectId,
@@ -100,7 +108,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             avatarStatus: "pending",
             backgroundStatus: "pending",
             backgroundAnalysis: {
-              priority: scene.priority || "medium",
+              priority: backgroundQuality,  // ✅ 수정: 프로젝트 설정값 사용
               emotion: scene.emotion || "neutral",
             },
             metadata: {},
