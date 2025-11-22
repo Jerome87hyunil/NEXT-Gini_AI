@@ -544,11 +544,11 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
           <CardContent>
             <div className="text-center py-8">
               <p className="text-muted-foreground mb-4">
-                영상을 다시 다운로드하려면 아래 버튼을 클릭하세요.
+                영상을 다시 렌더링하거나 다운로드하려면 아래 버튼을 클릭하세요.
               </p>
               <Button onClick={handleRenderAndDownload} disabled={generatingScript}>
                 <Play className="h-4 w-4 mr-2" />
-                {generatingScript ? "렌더링 중..." : "비디오 다시 다운로드"}
+                {generatingScript ? "렌더링 중..." : "다시 렌더링 및 다운로드"}
               </Button>
             </div>
           </CardContent>
