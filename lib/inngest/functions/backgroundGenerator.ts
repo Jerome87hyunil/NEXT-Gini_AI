@@ -4,7 +4,7 @@ import { generateBackgroundImage } from "@/lib/services/gemini";
 import { uploadFromBuffer } from "@/lib/supabase/storage";
 
 export const backgroundGenerator = inngest.createFunction(
-  { id: "background-generator", retries: 2, concurrency: [{ limit: 3 }] },
+  { id: "background-generator", retries: 2, concurrency: [{ limit: 1 }] }, // Rate Limit 회피: 3 → 1
   { event: "background/generation.requested" },
   async ({ event, step }) => {
     const { sceneId } = event.data;

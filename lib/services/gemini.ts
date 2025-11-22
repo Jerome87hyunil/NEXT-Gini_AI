@@ -327,6 +327,25 @@ export async function generateBackgroundImage(
   // Gemini 2.5 Flash Image 모델 사용
   const model = vertexAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
+    // Safety Settings 추가 (Safety Filter 차단 방지)
+    safetySettings: [
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+      },
+    ],
   });
 
   const result = await model.generateContent({
@@ -342,11 +361,43 @@ export async function generateBackgroundImage(
     },
   });
 
-  // 이미지 데이터 추출
-  const imageData = result.response.candidates?.[0]?.content?.parts?.[0];
+  // 응답을 에러 발생 전에 로깅 (디버깅용)
+  console.log("🔍 ===== Gemini API Response =====");
+  console.log(`   Candidates count: ${result.response.candidates?.length || 0}`);
+  if (result.response.promptFeedback) {
+    console.log("   PromptFeedback:", JSON.stringify(result.response.promptFeedback, null, 2));
+  }
+  console.log("==================================");
+
+  // 상세한 응답 검증
+  const response = result.response;
+
+  // 1. candidates 배열 확인
+  if (!response.candidates || response.candidates.length === 0) {
+    console.error("❌ No candidates in Gemini response");
+    console.error("   PromptFeedback:", JSON.stringify(response.promptFeedback, null, 2));
+
+    if (response.promptFeedback?.blockReason) {
+      throw new Error(`Gemini blocked by safety filter: ${response.promptFeedback.blockReason}`);
+    }
+
+    throw new Error("No candidates in Gemini response");
+  }
+
+  const candidate = response.candidates[0];
+
+  // 2. finishReason 확인
+  if (candidate.finishReason && candidate.finishReason !== "STOP") {
+    console.error("❌ Generation did not complete normally");
+    console.error("   Finish reason:", candidate.finishReason);
+    throw new Error(`Gemini generation failed: ${candidate.finishReason}`);
+  }
+
+  // 3. 이미지 데이터 확인
+  const imageData = candidate.content?.parts?.[0];
   if (!imageData || !("inlineData" in imageData)) {
-    console.error("❌ No image data in Gemini response");
-    console.error("   Full response:", JSON.stringify(result.response, null, 2));
+    console.error("❌ No image data in candidate");
+    console.error("   Candidate structure:", JSON.stringify(candidate, null, 2));
     throw new Error("No image data in Gemini response");
   }
 
