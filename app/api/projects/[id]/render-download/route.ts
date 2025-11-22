@@ -105,9 +105,10 @@ export async function POST(
 
       const audioAsset = assets.find((a) => a.kind === "audio");
       const avatarAsset = assets.find((a) => a.kind === "avatar_video");
-      const backgroundAsset = assets.find(
-        (a) => a.kind === "background_video" || a.kind === "background_image"
-      );
+      // background_video를 우선 선택, 없으면 background_image 사용
+      const backgroundAsset =
+        assets.find((a) => a.kind === "background_video") ||
+        assets.find((a) => a.kind === "background_image");
 
       if (!audioAsset || !avatarAsset || !backgroundAsset) {
         throw new Error(
