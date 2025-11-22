@@ -143,7 +143,29 @@ export async function generateScript(
     throw new Error("Failed to parse Gemini response");
   }
 
-  const parsedJson = JSON.parse(jsonMatch[0]);
+  // Gemini가 삽입한 주석/잡음 제거
+  let jsonText = jsonMatch[0];
+
+  // 패턴 1: {[AI assistant thought process...]} 형태 제거
+  jsonText = jsonText.replace(/\{?\[AI assistant[^\]]*\]?\}?/gi, '');
+
+  // 패턴 2: // 주석 제거
+  jsonText = jsonText.replace(/\/\/[^\n]*/g, '');
+
+  // 패턴 3: /* 주석 */ 제거
+  jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // 연속된 쉼표 정리 (,, → ,)
+  jsonText = jsonText.replace(/,\s*,/g, ',');
+
+  // 마지막 쉼표 제거 (배열/객체 끝의 trailing comma)
+  jsonText = jsonText.replace(/,\s*}/g, '}');
+  jsonText = jsonText.replace(/,\s*\]/g, ']');
+
+  console.log("🧹 Cleaned JSON (first 500 chars):");
+  console.log(jsonText.substring(0, 500));
+
+  const parsedJson = JSON.parse(jsonText);
 
   // 디버깅: 파싱된 JSON 확인
   console.log("📦 Parsed JSON:");
