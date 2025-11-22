@@ -4,7 +4,7 @@ import { check, NAMESPACES, RELATIONS } from "@/lib/permissions";
 import { downloadFile } from "@/lib/supabase/storage";
 import { inngest } from "@/lib/inngest/client";
 import { NextResponse } from "next/server";
-import { VertexAI } from "@google-cloud/vertexai";
+import { generateScript } from "@/lib/services/gemini";
 
 type Params = Promise<{ id: string }>;
 
@@ -65,85 +65,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
     const arrayBuffer = await blob.arrayBuffer();
     const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
-    // Google Vertex AI로 스크립트 생성
-    const vertexAI = new VertexAI({
-      project: process.env.GOOGLE_CLOUD_PROJECT!,
-      location: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
-    });
-
-    const model = vertexAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
-    });
-
-    // 씬 개수 계산 (영상 길이 / 8초)
-    const sceneCount = Math.ceil(project.duration / 8);
-
-    const prompt = `
-PDF 문서를 분석하여 ${project.duration}초 분량의 발표 대본을 생성하세요.
-총 ${sceneCount}개의 씬으로 나누고, 각 씬은 약 8초 분량입니다.
-
-출력 형식 (JSON):
-{
-  "scenes": [
-    {
-      "sceneNumber": 1,
-      "script": "씬 1 대본 내용",
-      "duration": 8,
-      "visualDescription": "화면에 표시될 내용 설명",
-      "imagePrompt": "Nano Banana 이미지 생성용 프롬프트 (영문, 16:9 비율, 포토리얼리스틱)",
-      "videoPrompt": "Veo 3.1 영상 생성용 프롬프트 (영문, 카메라 움직임 포함, 8초 길이)",
-      "priority": "high 또는 medium 또는 low"
-    },
-    ...
-  ]
-}
-
-규칙:
-- 각 씬의 대본은 자연스럽고 발표하기 적합해야 합니다
-- 각 씬은 정확히 8초 분량의 대본이어야 합니다 (Veo 3.1 영상 길이에 맞춤)
-- visualDescription은 배경 이미지 및 영상 생성에 사용됩니다 (한국어)
-- imagePrompt는 Nano Banana 이미지 생성 모델용 프롬프트입니다 (영문 필수)
-  * 16:9 비율, 포토리얼리스틱 스타일
-  * 구체적인 조명, 색상, 구도, 질감 포함
-  * 예: "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting"
-- videoPrompt는 Veo 3.1 영상 생성 모델용 프롬프트입니다 (영문 필수)
-  * 카메라 움직임 (slow pan, gentle zoom, static shot)
-  * 동적 요소 (subtle movement, light changes)
-  * 8초 길이에 적합한 변화
-  * 예: "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 8 seconds duration"
-- priority는 배경 중요도입니다 (high: Veo 영상, medium: Nano 이미지, low: 그라데이션)
-- 한국어로 작성하세요
-`.trim();
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: "application/pdf",
-                data: pdfBase64,
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    const response = result.response.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!response) {
-      throw new Error("Gemini API로부터 응답을 받지 못했습니다.");
-    }
-
-    // JSON 파싱
-    const jsonMatch = response.match(/```json\n([\s\S]*?)\n```/) || response.match(/{[\s\S]*}/);
-    if (!jsonMatch) {
-      throw new Error("스크립트 JSON 파싱 실패");
-    }
-
-    const scriptData = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+    // lib/services/gemini.ts의 generateScript() 함수 사용
+    // (Gemini 2.5 Pro + Flash 검증/요약 포함)
+    const scriptData = await generateScript(
+      pdfBase64,
+      project.duration as 30 | 60 | 180
+    );
 
     // Scene 레코드 생성
     const scenes = await Promise.all(
