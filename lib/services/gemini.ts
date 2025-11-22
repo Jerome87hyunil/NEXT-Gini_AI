@@ -1,5 +1,5 @@
 import "server-only";
-import { VertexAI, HarmBlockThreshold, HarmCategory } from "@google-cloud/vertexai";
+import { VertexAI, HarmBlockThreshold, HarmCategory, SchemaType } from "@google-cloud/vertexai";
 import {
   getGoogleCredentials,
   getGoogleProjectId,
@@ -43,7 +43,34 @@ export async function generateScript(
     model: "gemini-2.5-pro",
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // 증가: 8192 → 16384 (180초 23개 씬 생성 위해)
+      responseMimeType: "application/json", // JSON 응답 강제
+      responseSchema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          scenes: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                sceneNumber: { type: SchemaType.INTEGER },
+                script: { type: SchemaType.STRING },
+                duration: { type: SchemaType.NUMBER },
+                visualDescription: { type: SchemaType.STRING },
+                imagePrompt: { type: SchemaType.STRING },
+                videoPrompt: { type: SchemaType.STRING },
+                priority: {
+                  type: SchemaType.STRING,
+                  enum: ["high", "medium", "low"]
+                },
+                emotion: { type: SchemaType.STRING }
+              },
+              required: ["sceneNumber", "script", "duration", "visualDescription"]
+            }
+          }
+        },
+        required: ["scenes"]
+      }
     },
     safetySettings: [
       {
@@ -131,56 +158,33 @@ export async function generateScript(
   const text = response.candidates?.[0].content.parts[0].text || "";
 
   // 디버깅: Gemini 원시 응답 확인
-  console.log("🤖 Gemini Raw Response:");
+  console.log("🤖 Gemini Raw Response (first 1000 chars):");
   console.log("=".repeat(80));
-  console.log(text);
+  console.log(text.substring(0, 1000));
   console.log("=".repeat(80));
 
-  // JSON 파싱
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error("❌ Failed to find JSON in Gemini response");
-    throw new Error("Failed to parse Gemini response");
+  // JSON Schema 적용으로 응답이 항상 유효한 JSON이므로 직접 파싱
+  let parsedJson;
+  try {
+    parsedJson = JSON.parse(text);
+  } catch (parseError) {
+    // JSON Schema가 있어도 드물게 실패할 수 있으므로 fallback
+    console.warn("⚠️ Direct parse failed, trying regex extraction...");
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("❌ Failed to find JSON in Gemini response");
+      console.error("Response text:", text);
+      throw new Error("Failed to parse Gemini response - no valid JSON found");
+    }
+    parsedJson = JSON.parse(jsonMatch[0]);
   }
 
-  // Gemini가 삽입한 주석/잡음 제거
-  let jsonText = jsonMatch[0];
-
-  // 패턴 1: {[AI assistant thought process...]} 형태 제거
-  jsonText = jsonText.replace(/\{?\[AI assistant[^\]]*\]?\}?/gi, '');
-
-  // 패턴 2: // 주석 제거
-  jsonText = jsonText.replace(/\/\/[^\n]*/g, '');
-
-  // 패턴 3: /* 주석 */ 제거
-  jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
-
-  // 패턴 4: innerHTML}, le 같은 쓰레기 텍스트 제거
-  jsonText = jsonText.replace(/innerHTML\},/g, '');
-  jsonText = jsonText.replace(/\ble\b/g, '');
-
-  // 패턴 5: 잘못된 속성 이름 수정 ("priority-" → "priority")
-  jsonText = jsonText.replace(/"priority-":/g, '"priority":');
-
-  // 패턴 6: 한글이 섞인 영어 단어 정리 (예: "경찰ow" → "glow")
-  jsonText = jsonText.replace(/경찰ow/g, 'glow');
-  jsonText = jsonText.replace(/લાભrtain/g, 'certain');
-
-  // 연속된 쉼표 정리 (,, → ,)
-  jsonText = jsonText.replace(/,\s*,/g, ',');
-
-  // 마지막 쉼표 제거 (배열/객체 끝의 trailing comma)
-  jsonText = jsonText.replace(/,\s*}/g, '}');
-  jsonText = jsonText.replace(/,\s*\]/g, ']');
-
-  console.log("🧹 Cleaned JSON (first 500 chars):");
-  console.log(jsonText.substring(0, 500));
-
-  const parsedJson = JSON.parse(jsonText);
-
   // 디버깅: 파싱된 JSON 확인
-  console.log("📦 Parsed JSON:");
-  console.log(JSON.stringify(parsedJson, null, 2));
+  console.log("📦 Parsed JSON - scenes count:", parsedJson.scenes?.length || 0);
+  if (parsedJson.scenes && parsedJson.scenes.length > 0) {
+    console.log("First scene:", JSON.stringify(parsedJson.scenes[0], null, 2));
+    console.log("Last scene:", JSON.stringify(parsedJson.scenes[parsedJson.scenes.length - 1], null, 2));
+  }
 
   // 🚨 Gemini 2.5 Flash를 사용한 스크립트 검증 및 요약
   console.log("\n🔍 스크립트 검증 및 요약 시작...");
