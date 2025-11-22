@@ -11,6 +11,8 @@ export const scriptGenerator = inngest.createFunction(
 
     // 1. 프로젝트 및 문서 조회
     const result = await step.run("fetch-project-and-document", async () => {
+      console.log(`🔍 [scriptGenerator] Fetching project ${projectId} and document ${documentId}`);
+
       const project = await prisma.project.findUnique({
         where: { id: projectId },
         include: {
@@ -27,6 +29,16 @@ export const scriptGenerator = inngest.createFunction(
       if (!project.documents[0]) {
         throw new Error(`Document ${documentId} not found`);
       }
+
+      // 🚨 CRITICAL: settings 필드 확인
+      console.log(`🔍 [scriptGenerator] Project fetched:`, {
+        id: project.id,
+        title: project.title,
+        duration: project.duration,
+        settings: project.settings,
+        settingsType: typeof project.settings,
+        settingsKeys: project.settings ? Object.keys(project.settings) : 'null',
+      });
 
       return { project, document: project.documents[0] };
     });
