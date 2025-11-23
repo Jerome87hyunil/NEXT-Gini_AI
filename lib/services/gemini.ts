@@ -110,14 +110,16 @@ export async function generateScript(
        - "본 발표에서는 AI 코딩 도구의 효율적 활용 방안에 대하여 상세히 설명드리고자 합니다." (딱딱한 설명체)
    - 시각적 설명 (visualDescription): 배경에 표시할 내용 설명 (하위 호환성용)
    - 이미지 프롬프트 (imagePrompt): Nano Banana 이미지 생성 모델용 프롬프트
-     * 16:9 비율, 포토리얼리스틱 스타일
+     * 🚨 **필수: 16:9 aspect ratio 명시 (반드시 "16:9 composition" 또는 "16:9 aspect ratio" 포함)**
+     * 포토리얼리스틱 스타일
      * 구체적인 조명, 색상, 구도, 질감 포함
-     * 예: "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting, professional photography"
+     * 예: "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 aspect ratio composition, photorealistic, 8k quality, cinematic lighting, professional photography"
    - 영상 프롬프트 (videoPrompt): Veo 3.1 영상 생성 모델용 프롬프트
+     * 🚨 **필수: 16:9 aspect ratio 명시 (Veo API parameters에 16:9 지정되므로 프롬프트에도 명시)**
      * 카메라 움직임 (slow pan, gentle zoom, static shot)
      * 동적 요소 (subtle movement, light changes)
      * 8초 길이에 적합한 변화
-     * 예: "Slow camera pan from left to right across the office space, subtle light movement through windows, smooth transition, 8 seconds duration, cinematic motion"
+     * 예: "Slow camera pan from left to right across the office space, subtle light movement through windows, smooth transition, 16:9 widescreen format, 8 seconds duration, cinematic motion"
 
 응답 형식 (JSON):
 {
