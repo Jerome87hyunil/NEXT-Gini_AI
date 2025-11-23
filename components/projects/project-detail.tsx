@@ -32,7 +32,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Film, FileText, Upload, Play, Trash2, Pencil, Save, X, RefreshCw } from "lucide-react";
 import { ProjectStatus } from "@/components/realtime/project-status";
 import { SceneProgress } from "@/components/realtime/scene-progress";
 
@@ -134,6 +142,11 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
   const [editedBackgroundPriority, setEditedBackgroundPriority] = useState<"low" | "medium" | "high">("low");
   const [saving, setSaving] = useState(false);
   const [processingScenes, setProcessingScenes] = useState(false);
+  const [retryingSceneId, setRetryingSceneId] = useState<string | null>(null);
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false);
+  const [retryVideoPrompt, setRetryVideoPrompt] = useState("");
+  const [retryEmotion, setRetryEmotion] = useState("professional");
+  const [retryingVideo, setRetryingVideo] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -357,6 +370,58 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
       alert(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function handleOpenRetryDialog(scene: Scene) {
+    setRetryingSceneId(scene.id);
+    setRetryVideoPrompt(scene.videoPrompt || "");
+    const analysis = scene.backgroundAnalysis as { emotion?: string } | null;
+    setRetryEmotion(analysis?.emotion || "professional");
+    setRetryDialogOpen(true);
+  }
+
+  function handleCloseRetryDialog() {
+    setRetryDialogOpen(false);
+    setRetryingSceneId(null);
+    setRetryVideoPrompt("");
+    setRetryEmotion("professional");
+  }
+
+  async function handleRetryVideo() {
+    if (!retryingSceneId || !retryVideoPrompt.trim()) {
+      alert("영상 프롬프트를 입력해주세요.");
+      return;
+    }
+
+    setRetryingVideo(true);
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/scenes/${retryingSceneId}/retry-video`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            videoPrompt: retryVideoPrompt,
+            emotion: retryEmotion,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "영상 재생성에 실패했습니다.");
+      }
+
+      alert("영상 재생성이 시작되었습니다.");
+      handleCloseRetryDialog();
+      await fetchProject(); // 변경사항 반영
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "알 수 없는 오류");
+    } finally {
+      setRetryingVideo(false);
     }
   }
 
@@ -882,9 +947,20 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
 
                           {scene.videoPrompt && (
                             <div>
-                              <h4 className="font-medium text-xs text-muted-foreground mb-1.5">
-                                영상 프롬프트 (Veo 3.1)
-                              </h4>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <h4 className="font-medium text-xs text-muted-foreground">
+                                  영상 프롬프트 (Veo 3.1)
+                                </h4>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenRetryDialog(scene)}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  <RefreshCw className="h-3 w-3 mr-1" />
+                                  재생성
+                                </Button>
+                              </div>
                               <p className="text-xs text-gray-600 font-mono bg-gray-50 p-2 rounded border border-gray-200">
                                 {scene.videoPrompt}
                               </p>
@@ -946,6 +1022,74 @@ export function ProjectDetail({ projectId }: ProjectDetailProps) {
 
       {/* 씬 진행 상황 */}
       <SceneProgress projectId={projectId} />
+
+      {/* 영상 재생성 다이얼로그 */}
+      <Dialog open={retryDialogOpen} onOpenChange={setRetryDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>영상 재생성</DialogTitle>
+            <DialogDescription>
+              프롬프트를 수정하여 Veo 영상을 다시 생성합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="retry-video-prompt" className="text-sm font-medium mb-2">
+                영상 프롬프트
+              </Label>
+              <Textarea
+                id="retry-video-prompt"
+                value={retryVideoPrompt}
+                onChange={(e) => setRetryVideoPrompt(e.target.value)}
+                className="min-h-[120px] font-mono text-sm"
+                placeholder="Veo 영상 생성 프롬프트를 입력하세요..."
+              />
+              <p className="text-xs text-muted-foreground mt-1.5">
+                카메라 움직임, 조명, 분위기 등을 상세히 설명해주세요.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="retry-emotion" className="text-sm font-medium mb-2">
+                감정 (Emotion)
+              </Label>
+              <Select value={retryEmotion} onValueChange={setRetryEmotion}>
+                <SelectTrigger id="retry-emotion">
+                  <SelectValue placeholder="감정 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="professional">Professional</SelectItem>
+                  <SelectItem value="energetic">Energetic</SelectItem>
+                  <SelectItem value="calm">Calm</SelectItem>
+                  <SelectItem value="dramatic">Dramatic</SelectItem>
+                  <SelectItem value="cheerful">Cheerful</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                영상의 전체적인 분위기를 결정합니다.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCloseRetryDialog}
+              disabled={retryingVideo}
+            >
+              취소
+            </Button>
+            <Button
+              onClick={handleRetryVideo}
+              disabled={retryingVideo || !retryVideoPrompt.trim()}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${retryingVideo ? "animate-spin" : ""}`} />
+              {retryingVideo ? "재생성 중..." : "재생성 시작"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
