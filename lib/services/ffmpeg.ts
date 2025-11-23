@@ -11,7 +11,7 @@ export class FFmpegService {
   /**
    * 배경 + 아바타 합성 명령 빌드
    * Avatar overlay: bottom-right corner, 28% width, circular mask
-   * Audio mix: Background music 35% + Avatar voice 100%
+   * Audio mix: Background music 50% + Avatar voice 100%
    */
   buildCompositionCommand(
     backgroundPath: string,
@@ -28,9 +28,9 @@ export class FFmpegService {
       "[bg][avatar]overlay=x=W-w-64:y=H-h-64:format=auto[video_out]",
     ].join(";");
 
-    // Audio mixing: Background music (35% volume) + Avatar voice (100% volume)
+    // Audio mixing: Background music (50% volume) + Avatar voice (100% volume)
     const audioFilter = [
-      "[0:a]volume=0.35[bg_audio]",
+      "[0:a]volume=0.50[bg_audio]",
       "[1:a]volume=1.0[avatar_audio]",
       "[bg_audio][avatar_audio]amix=inputs=2:duration=first:dropout_transition=2[audio_out]",
     ].join(";");
