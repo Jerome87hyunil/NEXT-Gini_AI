@@ -97,6 +97,7 @@ export const veoVideoGenerator = inngest.createFunction(
       data: {
         sceneId: scene.id,
         operationName: operation.name,
+        imageAssetId, // Veo 실패 시 이미지 fallback을 위해 전달
         maxAttempts: 120, // 5초 간격 × 120회 = 600초 (10분)
       },
     });

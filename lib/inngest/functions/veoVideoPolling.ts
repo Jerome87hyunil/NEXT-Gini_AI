@@ -7,7 +7,7 @@ export const veoVideoPolling = inngest.createFunction(
   { id: "veo-video-polling" },
   { event: "veo/polling.requested" },
   async ({ event, step }) => {
-    const { sceneId, operationName, maxAttempts = 120, currentAttempt = 1 } = event.data;
+    const { sceneId, operationName, imageAssetId, maxAttempts = 120, currentAttempt = 1 } = event.data;
 
     // 첫 번째 시도: 더 긴 대기 (operation 생성 전파 대기)
     // 이후 시도: 5초 대기
@@ -68,6 +68,7 @@ export const veoVideoPolling = inngest.createFunction(
         data: {
           sceneId,
           operationName,
+          imageAssetId,
           maxAttempts,
           currentAttempt: currentAttempt + 1,
         },
@@ -99,7 +100,7 @@ export const veoVideoPolling = inngest.createFunction(
         console.error(`   Consider regenerating the script with more conservative language`);
       }
 
-      // RenderJob 실패 처리
+      // RenderJob 실패 처리 (추후 재시도를 위해 기록)
       await step.run("mark-render-job-error", async () => {
         await prisma.renderJob.updateMany({
           where: {
@@ -113,7 +114,63 @@ export const veoVideoPolling = inngest.createFunction(
         });
       });
 
-      // 씬 배경 상태 실패 처리
+      // ⚠️ Graceful Degradation: 이미지 fallback으로 워크플로우 계속 진행
+      if (imageAssetId) {
+        console.log(`📸 Veo video failed, falling back to image asset: ${imageAssetId}`);
+
+        // 씬의 backgroundAssetId를 이미지로 설정하여 완료 처리
+        await step.run("fallback-to-image-asset", async () => {
+          await prisma.scene.update({
+            where: { id: sceneId },
+            data: {
+              backgroundAssetId: imageAssetId,
+              backgroundStatus: "completed", // 이미지로라도 완료
+            },
+          });
+        });
+
+        // Scene 정보 조회 (background/completed 이벤트용)
+        const scene = await step.run("fetch-scene-for-event", async () => {
+          return await prisma.scene.findUniqueOrThrow({
+            where: { id: sceneId },
+            select: {
+              projectId: true,
+              backgroundAsset: {
+                select: {
+                  id: true,
+                  url: true,
+                },
+              },
+            },
+          });
+        });
+
+        // 배경 완료 이벤트 발송 (다음 씬 처리 트리거)
+        await step.sendEvent("background-completed-image-fallback", {
+          name: "background/completed",
+          data: {
+            sceneId,
+            projectId: scene.projectId,
+            assetId: imageAssetId,
+            videoUrl: scene.backgroundAsset?.url || "", // 이미지 URL
+          },
+        });
+
+        console.log(`✅ Scene ${sceneId} completed with image fallback`);
+        console.log(`   Image Asset ID: ${imageAssetId}`);
+        console.log(`   Veo video generation can be retried later if needed`);
+
+        return {
+          success: true,
+          sceneId,
+          assetId: imageAssetId,
+          fallback: true,
+          videoUrl: scene.backgroundAsset?.url || "",
+          message: "Veo video failed, using image fallback",
+        };
+      }
+
+      // imageAssetId가 없는 경우 (예외 상황) - 완전 실패 처리
       await step.run("mark-scene-background-error", async () => {
         await prisma.scene.update({
           where: { id: sceneId },
@@ -121,7 +178,7 @@ export const veoVideoPolling = inngest.createFunction(
         });
       });
 
-      throw new Error(`Veo operation failed: ${userFriendlyError}`);
+      throw new Error(`Veo operation failed and no image fallback available: ${userFriendlyError}`);
     }
 
     // 성공한 경우 - videoBuffer를 다시 가져와서 Supabase Storage에 업로드

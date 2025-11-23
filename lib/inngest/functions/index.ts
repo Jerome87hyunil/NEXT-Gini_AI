@@ -12,5 +12,5 @@ export { avatarPolling } from "./avatarPolling";
 export { backgroundGenerator } from "./backgroundGenerator";
 export { veoVideoGenerator } from "./veoVideoGenerator";
 export { veoVideoPolling } from "./veoVideoPolling";
-export { videoCompositor } from "./videoCompositor";
+// export { videoCompositor } from "./videoCompositor"; // 삭제: 수동 렌더링 방식으로 변경
 // export { videoRender } from "./videoRender"; // 비활성화: 즉시 다운로드 방식으로 변경

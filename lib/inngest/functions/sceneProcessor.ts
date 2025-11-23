@@ -137,7 +137,7 @@ export const sceneProcessor = inngest.createFunction(
     // Rate limiting (API 제한 방지)
     await step.sleep("rate-limit", "2s");
 
-    // 다음 씬 처리 or 비디오 합성
+    // 다음 씬 처리 or 완료 처리
     const currentIndex = scene.project.scenes.findIndex((s) => s.id === sceneId);
     const nextScene = scene.project.scenes[currentIndex + 1];
 
@@ -152,14 +152,18 @@ export const sceneProcessor = inngest.createFunction(
         },
       });
     } else {
-      // 모든 씬 완료 → 비디오 합성
-      await step.sendEvent("trigger-video-compositor", {
-        name: "video/compose.requested",
-        data: {
-          projectId,
-          userId,
-        },
+      // 모든 씬 완료 → 프로젝트 상태 업데이트
+      // 실제 렌더링은 사용자가 프론트엔드에서 "비디오 렌더링 및 다운로드" 버튼 클릭 시
+      // /api/projects/[id]/render-download API를 통해 수동으로 진행
+      await step.run("mark-scenes-processed", async () => {
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { status: "scenes_processed" },
+        });
       });
+
+      console.log(`✅ All scenes processed for project ${projectId}`);
+      console.log(`   User can now manually trigger rendering from the frontend`);
     }
 
     return { success: true, sceneId };
