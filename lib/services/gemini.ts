@@ -116,10 +116,10 @@ export async function generateScript(
      * 예: "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 aspect ratio composition, photorealistic, 8k quality, cinematic lighting, professional photography"
    - 영상 프롬프트 (videoPrompt): Veo 3.1 영상 생성 모델용 프롬프트
      * 🚨 **필수: 16:9 aspect ratio 명시 (Veo API parameters에 16:9 지정되므로 프롬프트에도 명시)**
+     * 🚨 **중요: duration은 절대 포함하지 마세요 (TTS 길이에 따라 자동 계산됨)**
      * 카메라 움직임 (slow pan, gentle zoom, static shot)
      * 동적 요소 (subtle movement, light changes)
-     * 8초 길이에 적합한 변화
-     * 예: "Slow camera pan from left to right across the office space, subtle light movement through windows, smooth transition, 16:9 widescreen format, 8 seconds duration, cinematic motion"
+     * 예: "Slow camera pan from left to right across the office space, subtle light movement through windows, smooth transition, 16:9 widescreen format, cinematic motion"
 
 응답 형식 (JSON):
 {
@@ -129,7 +129,7 @@ export async function generateScript(
       "script": "v1.0은 코드 중심 협업 시대를 열었습니다.",
       "visualDescription": "현대적인 사무실 배경",
       "imagePrompt": "Modern office interior with large windows, soft natural daylight, minimalist wooden desk, potted plants, 16:9 composition, photorealistic, 8k quality, cinematic lighting",
-      "videoPrompt": "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 8 seconds duration"
+      "videoPrompt": "Slow camera pan across the office space, subtle light movement through windows, smooth transition, 16:9 widescreen format, cinematic motion"
     }
   ]
 }
@@ -363,6 +363,7 @@ export async function generateAvatarDesign(settings: {
       imageConfig: {
         aspectRatio: "1:1", // 아바타는 1:1 (정사각형)
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any, // TypeScript 타입 우회 (SDK 타입 정의 부족)
   });
 
@@ -547,6 +548,7 @@ export async function generateBackgroundImage(
       imageConfig: {
         aspectRatio: "16:9", // 배경은 16:9 (와이드스크린)
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any, // TypeScript 타입 우회 (SDK 타입 정의 부족)
   });
 

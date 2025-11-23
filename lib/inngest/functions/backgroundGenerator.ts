@@ -132,10 +132,10 @@ export const backgroundGenerator = inngest.createFunction(
 
     // 7. High priority: Veo 영상 생성 트리거
     if (priority === "high") {
-      // videoPrompt 우선 사용, 없으면 기본값
+      // videoPrompt 우선 사용, 없으면 기본값 (duration은 veoVideoGenerator에서 동적 추가)
       const videoPrompt =
         scene.videoPrompt ||
-        "Slow camera movement, subtle scene changes, 8 seconds duration, cinematic motion";
+        "Slow camera movement, subtle scene changes, cinematic motion";
 
       await step.sendEvent("trigger-veo-generation", {
         name: "veo/generation.requested",
@@ -143,7 +143,7 @@ export const backgroundGenerator = inngest.createFunction(
           sceneId: scene.id,
           imageAssetId: asset.id,
           imageUrl,
-          videoPrompt, // videoPrompt 전달
+          videoPrompt, // videoPrompt 전달 (duration 제외)
           emotion: analysis?.emotion || "professional", // emotion 전달
         },
       });

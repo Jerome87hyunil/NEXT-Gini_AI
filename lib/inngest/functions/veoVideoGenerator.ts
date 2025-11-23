@@ -54,11 +54,19 @@ export const veoVideoGenerator = inngest.createFunction(
       // TTS 길이 기반으로 Veo 길이 동적 계산
       const veoDuration = calculateVeoDuration(scene.durationSeconds);
 
-      // videoPrompt 우선 사용, 없으면 scene.videoPrompt, 그것도 없으면 기본값
-      const prompt =
-        videoPrompt ||
-        scene.videoPrompt ||
-        `Slow camera movement, subtle scene changes, ${veoDuration} seconds duration, cinematic motion`;
+      // 전달받은 또는 저장된 videoPrompt에서 하드코딩된 duration 패턴 제거
+      const rawPrompt = videoPrompt || scene.videoPrompt || "";
+      const basePrompt = rawPrompt
+        .replace(/\b\d+\s*seconds?\s*duration\b/gi, "") // "8 seconds duration" 등 제거
+        .replace(/,\s*,/g, ",") // 연속된 쉼표 정리
+        .replace(/,\s*\./g, ".") // 쉼표+마침표 정리
+        .trim()
+        .replace(/,\s*$/g, ""); // 끝의 쉼표 제거
+
+      // 동적으로 계산된 duration을 추가하여 최종 프롬프트 생성
+      const prompt = basePrompt
+        ? `${basePrompt}, ${veoDuration} seconds duration`
+        : `Slow camera movement, subtle scene changes, ${veoDuration} seconds duration, cinematic motion`;
 
       console.log(`🎬 Veo generation starting:`);
       console.log(`   Scene ID: ${sceneId}`);
@@ -66,7 +74,8 @@ export const veoVideoGenerator = inngest.createFunction(
       console.log(`   Image URL: ${imageUrl}`);
       console.log(`   TTS Duration: ${scene.durationSeconds?.toFixed(2) || "unknown"}s`);
       console.log(`   Veo Duration (optimized): ${veoDuration}s`);
-      console.log(`   Video Prompt: ${prompt.substring(0, 100)}...`);
+      console.log(`   Original Prompt: ${rawPrompt.substring(0, 80)}...`);
+      console.log(`   Final Prompt: ${prompt.substring(0, 100)}...`);
       console.log(`   Emotion: ${emotion || "professional"}`);
 
       return await generateVeoVideo(imageUrl, prompt, emotion, veoDuration);
