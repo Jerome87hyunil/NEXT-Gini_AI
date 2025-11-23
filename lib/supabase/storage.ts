@@ -144,23 +144,76 @@ export async function uploadFromUrl(
 }
 
 /**
- * 파일 다운로드
+ * 파일 다운로드 (재시도 로직 포함)
  *
  * @param path - 파일 경로
+ * @param maxRetries - 최대 재시도 횟수 (기본 3회)
  * @returns Blob
  */
-export async function downloadFile(path: string): Promise<Blob> {
+export async function downloadFile(
+  path: string,
+  maxRetries = 3
+): Promise<Blob> {
   const supabase = createServiceClient();
 
-  const { data, error } = await supabase.storage
-    .from(ASSETS_BUCKET)
-    .download(path);
+  let lastError: Error | null = null;
 
-  if (error) {
-    throw new Error(`Failed to download file: ${error.message}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(
+        `[Storage] Downloading file (attempt ${attempt}/${maxRetries}): ${path}`
+      );
+
+      const { data, error } = await supabase.storage
+        .from(ASSETS_BUCKET)
+        .download(path);
+
+      if (error) {
+        // Supabase 에러 객체를 명확하게 출력
+        const errorMessage = typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+        lastError = new Error(
+          `Supabase download error (attempt ${attempt}/${maxRetries})\n` +
+          `Path: ${path}\n` +
+          `Bucket: ${ASSETS_BUCKET}\n` +
+          `Error: ${errorMessage}`
+        );
+
+        console.error(lastError.message);
+
+        // 마지막 시도가 아니면 재시도
+        if (attempt < maxRetries) {
+          const delayMs = attempt * 1000; // 1초, 2초, 3초 대기
+          console.log(`[Storage] Retrying in ${delayMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        throw lastError;
+      }
+
+      console.log(
+        `[Storage] Download successful: ${path} (${(data.size / 1024).toFixed(2)} KB)`
+      );
+      return data;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+
+      // 마지막 시도가 아니면 재시도
+      if (attempt < maxRetries) {
+        const delayMs = attempt * 1000;
+        console.log(`[Storage] Error occurred, retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      throw lastError;
+    }
   }
 
-  return data;
+  throw lastError || new Error(`Failed to download file after ${maxRetries} attempts: ${path}`);
 }
 
 /**

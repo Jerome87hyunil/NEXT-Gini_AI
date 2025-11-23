@@ -11,6 +11,7 @@ export class FFmpegService {
   /**
    * 배경 + 아바타 합성 명령 빌드
    * Avatar overlay: bottom-right corner, 28% width, circular mask
+   * Audio mix: Background music 35% + Avatar voice 100%
    */
   buildCompositionCommand(
     backgroundPath: string,
@@ -21,14 +22,21 @@ export class FFmpegService {
     const isVideoBackground = this.isVideoExtension(backgroundExt);
 
     // Avatar overlay filter: bottom-right corner, 28% width, circular mask
-    const filterComplex = [
+    const videoFilter = [
       "[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080[bg]",
       "[1:v]scale=iw*0.28:-1,format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lt(hypot(X-(W/2),Y-(H/2)),min(W,H)/2),255,0)'[avatar]",
-      "[bg][avatar]overlay=x=W-w-64:y=H-h-64:format=auto",
+      "[bg][avatar]overlay=x=W-w-64:y=H-h-64:format=auto[video_out]",
+    ].join(";");
+
+    // Audio mixing: Background music (35% volume) + Avatar voice (100% volume)
+    const audioFilter = [
+      "[0:a]volume=0.35[bg_audio]",
+      "[1:a]volume=1.0[avatar_audio]",
+      "[bg_audio][avatar_audio]amix=inputs=2:duration=first:dropout_transition=2[audio_out]",
     ].join(";");
 
     if (isVideoBackground) {
-      // Video background (Veo): no loop needed
+      // Video background (Veo): mix background music with avatar voice
       return [
         "ffmpeg",
         "-i",
@@ -36,11 +44,11 @@ export class FFmpegService {
         "-i",
         avatarVideoPath,
         "-filter_complex",
-        filterComplex,
+        `${videoFilter};${audioFilter}`,
         "-map",
-        "0:v?", // Background video (if exists)
+        "[video_out]", // Composed video output
         "-map",
-        "1:a?", // Scene audio (if exists)
+        "[audio_out]", // Mixed audio output
         "-c:v",
         "libx264",
         "-c:a",
@@ -50,7 +58,13 @@ export class FFmpegService {
         outputPath,
       ];
     } else {
-      // Image background (Nano): loop needed
+      // Image background (Nano): only avatar audio (no background music)
+      const videoFilterImage = [
+        "[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080[bg]",
+        "[1:v]scale=iw*0.28:-1,format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lt(hypot(X-(W/2),Y-(H/2)),min(W,H)/2),255,0)'[avatar]",
+        "[bg][avatar]overlay=x=W-w-64:y=H-h-64:format=auto[video_out]",
+      ].join(";");
+
       return [
         "ffmpeg",
         "-loop",
@@ -60,11 +74,11 @@ export class FFmpegService {
         "-i",
         avatarVideoPath,
         "-filter_complex",
-        filterComplex,
+        videoFilterImage,
         "-map",
-        "0:v", // Background image
+        "[video_out]", // Composed video output
         "-map",
-        "1:a?", // Scene audio (if exists)
+        "1:a?", // Avatar audio only
         "-c:v",
         "libx264",
         "-c:a",

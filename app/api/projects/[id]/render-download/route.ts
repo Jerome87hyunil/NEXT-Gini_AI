@@ -126,16 +126,28 @@ export async function POST(
         `bg_${scene.sceneNumber}${backgroundExt}`
       );
 
+      console.log(
+        `[Render] Downloading background for scene ${scene.sceneNumber}: ${backgroundAsset.storagePath}`
+      );
       const bgBlob = await downloadFile(backgroundAsset.storagePath);
       const bgBuffer = Buffer.from(await bgBlob.arrayBuffer());
       await fs.writeFile(backgroundPath, bgBuffer);
+      console.log(
+        `[Render] Background saved to ${backgroundPath} (${(bgBuffer.length / 1024).toFixed(2)} KB)`
+      );
 
       // 6-3. 아바타 비디오 다운로드
       const avatarPath = path.join(tempDir, `avatar_${scene.sceneNumber}.mp4`);
 
+      console.log(
+        `[Render] Downloading avatar for scene ${scene.sceneNumber}: ${avatarAsset.storagePath}`
+      );
       const avatarBlob = await downloadFile(avatarAsset.storagePath);
       const avatarBuffer = Buffer.from(await avatarBlob.arrayBuffer());
       await fs.writeFile(avatarPath, avatarBuffer);
+      console.log(
+        `[Render] Avatar saved to ${avatarPath} (${(avatarBuffer.length / 1024).toFixed(2)} KB)`
+      );
 
       // 6-4. FFmpeg로 배경 + 아바타 합성
       const composedPath = path.join(tempDir, `composed_${scene.sceneNumber}.mp4`);
