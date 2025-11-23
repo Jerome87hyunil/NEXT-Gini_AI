@@ -604,12 +604,14 @@ export async function generateBackgroundImage(
  * @param imageUrl - 기준 이미지 URL
  * @param prompt - 영상 설명
  * @param emotion - 감정/분위기 (선택사항, 카메라 움직임 최적화)
+ * @param durationSeconds - 영상 길이 (초, Veo 3.0: 4/6/8만 허용, 기본값 8)
  * @returns Operation 정보
  */
 export async function generateVeoVideo(
   imageUrl: string,
   prompt: string,
-  emotion?: string
+  emotion?: string,
+  durationSeconds: number = 8
 ): Promise<{ name: string }> {
   const { GoogleAuth } = await import("google-auth-library");
 
@@ -650,6 +652,7 @@ export async function generateVeoVideo(
   console.log(`   Endpoint: ${endpoint}`);
   console.log(`   Original prompt: ${prompt.substring(0, 100)}...`);
   console.log(`   Enhanced prompt: ${enhancedPrompt.substring(0, 150)}...`);
+  console.log(`   Duration: ${durationSeconds}s (TTS-optimized)`);
 
   // API 요청 (Veo 형식)
   const response = await fetch(endpoint, {
@@ -672,6 +675,7 @@ export async function generateVeoVideo(
         aspectRatio: "16:9",
         resolution: "720p",
         sampleCount: 1,
+        duration: durationSeconds, // TTS 길이 기반 동적 설정
       },
     }),
   });

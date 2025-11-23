@@ -69,26 +69,47 @@ export const ttsGenerator = inngest.createFunction(
       });
     });
 
-    // 4. ElevenLabs TTS 생성 및 업로드 (Inngest output size 제한 회피)
-    const audioUrl = await step.run("generate-and-upload-tts", async () => {
+    // 4. ElevenLabs TTS 생성 및 임시 저장
+    const { audioUrl, audioDuration } = await step.run("generate-and-upload-tts", async () => {
+      const { promises: fs } = await import("fs");
+      const os = await import("os");
+      const path = await import("path");
+
       // TTS 생성 (성별별 보이스 적용)
       const ttsResult = await generateTTS(scene.script, voiceId);
-
-      // 즉시 Supabase Storage에 업로드 (Buffer를 step output으로 반환하지 않음)
-      const fileName = `scene_${scene.sceneNumber}_audio.mp3`;
-      const storagePath = `projects/${scene.projectId}/audio/${fileName}`;
 
       // API 응답이 JSON 직렬화된 Buffer일 수 있으므로 변환
       const audioBuffer = Buffer.isBuffer(ttsResult.audioBuffer)
         ? ttsResult.audioBuffer
         : Buffer.from(ttsResult.audioBuffer as unknown as ArrayBuffer);
 
+      // 임시 파일로 저장 (길이 측정을 위해)
+      const tempDir = os.tmpdir();
+      const tempPath = path.join(tempDir, `tts_${scene.id}_${Date.now()}.mp3`);
+      await fs.writeFile(tempPath, audioBuffer);
+
+      console.log(`🎵 TTS audio saved temporarily: ${tempPath}`);
+
+      // FFprobe로 정확한 오디오 길이 측정
+      const { FFmpegService } = await import("@/lib/services/ffmpeg");
+      const ffmpegService = new FFmpegService();
+      const audioDuration = await ffmpegService.getAudioDuration(tempPath);
+
+      console.log(`✅ Measured audio duration: ${audioDuration.toFixed(2)}s for scene ${scene.sceneNumber}`);
+
+      // Supabase Storage에 업로드
+      const fileName = `scene_${scene.sceneNumber}_audio.mp3`;
+      const storagePath = `projects/${scene.projectId}/audio/${fileName}`;
       const { url } = await uploadFromBuffer(
         audioBuffer,
         storagePath,
         "audio/mpeg"
       );
-      return url; // URL만 반환 (크기 작음)
+
+      // 임시 파일 삭제
+      await fs.unlink(tempPath);
+
+      return { audioUrl: url, audioDuration };
     });
 
     // 5. Asset 생성
@@ -117,8 +138,11 @@ export const ttsGenerator = inngest.createFunction(
         data: {
           audioAssetId: asset.id,
           ttsStatus: "completed",
+          durationSeconds: audioDuration, // 실제 측정된 오디오 길이 저장
         },
       });
+
+      console.log(`✅ Scene ${scene.sceneNumber} updated with audio duration: ${audioDuration.toFixed(2)}s`);
     });
 
     // 7. TTS 완료 이벤트 발송 (Scene Processor가 대기 중)

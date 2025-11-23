@@ -2,6 +2,27 @@ import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
 import { generateVeoVideo } from "@/lib/services/gemini";
 
+/**
+ * TTS 길이를 Veo 3.0 허용 값으로 올림
+ * Veo 3.0: 4, 6, 8초만 허용
+ */
+function calculateVeoDuration(audioDuration?: number | null): number {
+  // 기본값: 8초 (TTS 길이 없으면 기존 동작 유지)
+  if (!audioDuration) {
+    console.log("⚠️ No audio duration found, using default 8 seconds");
+    return 8;
+  }
+
+  // Veo 3.0 허용 값으로 올림
+  if (audioDuration <= 4) {
+    return 4;
+  } else if (audioDuration <= 6) {
+    return 6;
+  } else {
+    return 8;
+  }
+}
+
 export const veoVideoGenerator = inngest.createFunction(
   { id: "veo-video-generator", retries: 2, concurrency: [{ limit: 2 }] },
   { event: "veo/generation.requested" },
@@ -12,6 +33,13 @@ export const veoVideoGenerator = inngest.createFunction(
     const scene = await step.run("fetch-scene", async () => {
       const scene = await prisma.scene.findUnique({
         where: { id: sceneId },
+        select: {
+          id: true,
+          projectId: true,
+          sceneNumber: true,
+          videoPrompt: true,
+          durationSeconds: true, // TTS 실제 길이
+        },
       });
 
       if (!scene) {
@@ -23,19 +51,25 @@ export const veoVideoGenerator = inngest.createFunction(
 
     // 2. Veo 영상 생성 시작
     const operation = await step.run("start-veo-generation", async () => {
+      // TTS 길이 기반으로 Veo 길이 동적 계산
+      const veoDuration = calculateVeoDuration(scene.durationSeconds);
+
       // videoPrompt 우선 사용, 없으면 scene.videoPrompt, 그것도 없으면 기본값
       const prompt =
         videoPrompt ||
         scene.videoPrompt ||
-        "Slow camera movement, subtle scene changes, 8 seconds duration, cinematic motion";
+        `Slow camera movement, subtle scene changes, ${veoDuration} seconds duration, cinematic motion`;
 
       console.log(`🎬 Veo generation starting:`);
       console.log(`   Scene ID: ${sceneId}`);
+      console.log(`   Scene Number: ${scene.sceneNumber}`);
       console.log(`   Image URL: ${imageUrl}`);
-      console.log(`   Video Prompt: ${prompt}`);
+      console.log(`   TTS Duration: ${scene.durationSeconds?.toFixed(2) || "unknown"}s`);
+      console.log(`   Veo Duration (optimized): ${veoDuration}s`);
+      console.log(`   Video Prompt: ${prompt.substring(0, 100)}...`);
       console.log(`   Emotion: ${emotion || "professional"}`);
 
-      return await generateVeoVideo(imageUrl, prompt, emotion);
+      return await generateVeoVideo(imageUrl, prompt, emotion, veoDuration);
     });
 
     // 3. RenderJob 생성 (Veo LRO 추적)

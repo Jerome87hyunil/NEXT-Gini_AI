@@ -207,6 +207,18 @@ export class FFmpegService {
   }
 
   /**
+   * 오디오 duration 조회 (ffprobe)
+   * TTS 생성 후 정확한 오디오 길이 측정용
+   */
+  async getAudioDuration(audioPath: string): Promise<number> {
+    const command = this.buildDurationProbeCommand(audioPath);
+    const output = await this.executeAndCapture(command);
+    const duration = parseFloat(output) || 0;
+    console.log(`🎵 Audio duration measured: ${duration.toFixed(2)}s for ${audioPath}`);
+    return duration;
+  }
+
+  /**
    * FFmpeg 설치 확인
    */
   static async isFFmpegAvailable(): Promise<boolean> {
