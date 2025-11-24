@@ -117,7 +117,15 @@ export async function uploadFromBuffer(
     });
 
   if (error) {
-    throw new Error(`Failed to upload buffer: ${error.message}`);
+    console.error(`[Storage] Upload failed for ${normalizedPath}:`, error);
+    const errorDetails = typeof error === "object"
+      ? JSON.stringify(error, null, 2)
+      : String(error);
+    throw new Error(
+      `Failed to upload buffer to ${normalizedPath}\n` +
+      `Size: ${(buffer.length / 1024 / 1024).toFixed(2)} MB\n` +
+      `Error: ${errorDetails}`
+    );
   }
 
   const {
@@ -159,7 +167,15 @@ async function uploadLargeBuffer(
     });
 
   if (error) {
-    throw new Error(`Failed to upload large buffer: ${error.message}`);
+    console.error(`[Storage] Large upload failed for ${normalizedPath}:`, error);
+    const errorDetails = typeof error === "object"
+      ? JSON.stringify(error, null, 2)
+      : String(error);
+    throw new Error(
+      `Failed to upload large buffer to ${normalizedPath}\n` +
+      `Size: ${(buffer.length / 1024 / 1024).toFixed(2)} MB\n` +
+      `Error: ${errorDetails}`
+    );
   }
 
   const {
